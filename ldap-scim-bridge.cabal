@@ -9,7 +9,7 @@ license:             AGPL-3.0-only
 license-file:        LICENSE
 author:              Matthias Fischmann
 maintainer:          Matthias Fischmann <mf@zerobuzz.net>
-copyright:           2021 Matthias Fischmann
+copyright:           (c) 2021 wire.com
 category:            System
 build-type:          Simple
 extra-doc-files:     README.md
