@@ -21,12 +21,14 @@ source-repository head
   location:            https://github.com/fisx/ldap-scim-bridge.git
 
 common common-options
-  build-depends:       base ^>= 4.13.0.0
+  build-depends:       base >= 4.13 && < 4.15
                      , relude
-  
+                     , hscim >= 0.3.4 && < 0.4
+                     , ldap-client >=0.4.1 && <0.5
+
   mixins:              base hiding (Prelude)
                      , relude (Relude as Prelude)
-  
+
   ghc-options:         -Wall
                        -Wcompat
                        -Widentities
@@ -64,7 +66,6 @@ common common-options
                        MultiParamTypeClasses
                        MultiWayIf
                        NamedFieldPuns
-                       NoImplicitPrelude
                        OverloadedStrings
                        PackageImports
                        PatternSynonyms
