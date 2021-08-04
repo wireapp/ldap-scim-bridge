@@ -1,0 +1,98 @@
+cabal-version:       2.4
+name:                ldap-scim-bridge
+version:             0.0.0.0
+synopsis:            See README for more info
+description:         See README for more info
+homepage:            https://github.com/fisx/ldap-scim-bridge
+bug-reports:         https://github.com/fisx/ldap-scim-bridge/issues
+license:             AGPL-3.0-only
+license-file:        LICENSE
+author:              Matthias Fischmann
+maintainer:          Matthias Fischmann <mf@zerobuzz.net>
+copyright:           2021 Matthias Fischmann
+category:            System
+build-type:          Simple
+extra-doc-files:     README.md
+                     CHANGELOG.md
+tested-with:         GHC == 8.8.3
+
+source-repository head
+  type:                git
+  location:            https://github.com/fisx/ldap-scim-bridge.git
+
+common common-options
+  build-depends:       base ^>= 4.13.0.0
+                     , relude
+  
+  mixins:              base hiding (Prelude)
+                     , relude (Relude as Prelude)
+  
+  ghc-options:         -Wall
+                       -Wcompat
+                       -Widentities
+                       -Wincomplete-uni-patterns
+                       -Wincomplete-record-updates
+  if impl(ghc >= 8.0)
+    ghc-options:       -Wredundant-constraints
+  if impl(ghc >= 8.2)
+    ghc-options:       -fhide-source-paths
+  if impl(ghc >= 8.4)
+    ghc-options:       -Wmissing-export-lists
+                       -Wpartial-fields
+  if impl(ghc >= 8.8)
+    ghc-options:       -Wmissing-deriving-strategies
+
+  default-language:    Haskell2010
+  default-extensions:  AllowAmbiguousTypes
+                       BangPatterns
+                       ConstraintKinds
+                       DataKinds
+                       DefaultSignatures
+                       DeriveFunctor
+                       DeriveGeneric
+                       DeriveLift
+                       DeriveTraversable
+                       DerivingStrategies
+                       EmptyCase
+                       FlexibleContexts
+                       FlexibleInstances
+                       FunctionalDependencies
+                       GADTs
+                       InstanceSigs
+                       KindSignatures
+                       LambdaCase
+                       MultiParamTypeClasses
+                       MultiWayIf
+                       NamedFieldPuns
+                       NoImplicitPrelude
+                       OverloadedStrings
+                       PackageImports
+                       PatternSynonyms
+                       PolyKinds
+                       QuasiQuotes
+                       RankNTypes
+                       RecordWildCards
+                       ScopedTypeVariables
+                       StandaloneDeriving
+                       TemplateHaskell
+                       TupleSections
+                       TypeApplications
+                       TypeFamilies
+                       TypeFamilyDependencies
+                       TypeOperators
+                       UndecidableInstances
+                       ViewPatterns
+
+library
+  import:              common-options
+  hs-source-dirs:      src
+  exposed-modules:     LdapScimBridge
+
+executable ldap-scim-bridge
+  import:              common-options
+  hs-source-dirs:      app
+  main-is:             Main.hs
+  build-depends:       ldap-scim-bridge
+  ghc-options:         -threaded
+                       -rtsopts
+                       -with-rtsopts=-N
