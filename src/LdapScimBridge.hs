@@ -5,16 +5,19 @@ module LdapScimBridge where
 
 import Control.Exception (bracket_)
 import Control.Monad (when)
-import Data.ByteString (ByteString)
-import qualified Data.ByteString as ByteString
+import qualified Data.Aeson as Aeson
+import Data.ByteString.Char8 (ByteString)
+import qualified Data.ByteString.Char8 as ByteString
 import qualified Data.Foldable as Foldable
 import Data.Function (fix)
 import Data.List.NonEmpty
 import Data.Map (Map)
 import qualified Data.Map as Map
+import Data.Maybe (catMaybes)
 import Data.Text (Text)
 import qualified Data.Text.Encoding as Text
 import qualified Data.Text.IO as Text
+import qualified Data.Yaml as Yaml
 import Ldap.Client as Ldap
 import qualified Ldap.Client.Bind as Ldap
 import System.Exit (die)
@@ -22,7 +25,7 @@ import qualified System.IO as IO
 import qualified Web.Scim.Schema.User as ScimSchema
 import qualified Web.Scim.Server.Mock as ScimServer
 
-data SearchConf = Conf
+data SearchConf = SearchConf
   { -- | eg. @Ldap.Tls (host conf) Ldap.defaultTlsSettings@
     host :: Host,
     -- | usually 389 for plaintext or 636 for TLS.
@@ -38,6 +41,43 @@ data SearchConf = Conf
     codec :: ByteString -> Text,
     mapping :: Mapping
   }
+
+instance Aeson.FromJSON SearchConf where
+  parseJSON = Aeson.withObject "SearchConf" $ \obj -> do
+    ftls :: Bool <- obj Aeson..: "tls"
+    fhost :: String <- obj Aeson..: "host"
+    fport :: Int <- obj Aeson..: "port"
+    fdn :: Text <- obj Aeson..: "dn"
+    fpassword :: String <- obj Aeson..: "password"
+    fbase :: Text <- obj Aeson..: "base"
+    fobjectClass :: String <- obj Aeson..: "objectClass"
+    fcodec :: Text <- obj Aeson..: "codec"
+    fmapping :: Mapping <- obj Aeson..: "mapping"
+
+    let vhost :: Host
+        vhost = case ftls of
+          True -> Ldap.Tls fhost Ldap.defaultTlsSettings
+          False -> Ldap.Plain fhost
+
+        vport :: PortNumber
+        vport = fromIntegral fport
+
+    vcodec :: (ByteString -> Text) <- case fcodec of
+      "utf8" -> pure Text.decodeUtf8
+      "latin1" -> pure Text.decodeLatin1
+      bad -> fail $ "unsupported codec: " <> show bad
+
+    pure $
+      SearchConf
+        { host = vhost,
+          port = vport,
+          dn = Dn fdn,
+          password = Password $ ByteString.pack fpassword,
+          base = Dn fbase,
+          fltr = Attr "objectClass" := ByteString.pack fobjectClass,
+          codec = vcodec,
+          mapping = fmapping
+        }
 
 data MappingError
   = MissingAttr Text
@@ -60,35 +100,29 @@ newtype FieldMapping
 -- for the attribute mapping to externalId.
 newtype Mapping = Mapping {fromMapping :: Map Text FieldMapping}
 
-myconf :: SearchConf
-myconf =
-  Conf
-    { host = Ldap.Plain "localhost",
-      port = 389,
-      dn = Dn "cn=admin,dc=nodomain",
-      password = Password "geheim hoch drei",
-      base = Dn "ou=People,dc=nodomain",
-      fltr = Attr "objectClass" := "account",
-      codec = Text.decodeUtf8,
-      mapping = mymapping
-    }
-  where
-    mymapping :: Mapping
-    mymapping =
-      Mapping . Map.fromList $
-        [ ( "uidNumber",
-            FieldMapping $
-              \case
-                [val] -> Right $ \usr -> usr {ScimSchema.userName = val}
-                bad -> Left $ WrongNumberOfAttrValues "uidNumber" 1 (Prelude.length bad)
-          ),
-          ( "uid",
-            FieldMapping $
-              \case
-                [val] -> Right $ \usr -> usr {ScimSchema.externalId = Just val}
-                bad -> Left $ WrongNumberOfAttrValues "uid" 1 (Prelude.length bad)
-          )
-        ]
+instance Aeson.FromJSON Mapping where
+  parseJSON = Aeson.withObject "Mapping" $ \obj -> do
+    fuserName <- obj Aeson..: "userName"
+    fexternalId <- obj Aeson..: "externalId"
+    mfemail <- obj Aeson..:? "email"
+
+    pure . Mapping . Map.fromList . catMaybes $
+      [ Just (fuserName, mapUserName fuserName),
+        Just (fexternalId, mapExternalId fexternalId),
+        (\femail -> (femail, mapEmail femail)) <$> mfemail
+      ]
+    where
+      mapUserName ldapFieldName = FieldMapping $
+        \case
+          [val] -> Right $ \usr -> usr {ScimSchema.userName = val}
+          bad -> Left $ WrongNumberOfAttrValues ldapFieldName 1 (Prelude.length bad)
+
+      mapExternalId ldapFieldName = FieldMapping $
+        \case
+          [val] -> Right $ \usr -> usr {ScimSchema.externalId = Just val}
+          bad -> Left $ WrongNumberOfAttrValues ldapFieldName 1 (Prelude.length bad)
+
+      mapEmail = error "now we can allow 0 or more than 1 values!"
 
 type LdapResult a = IO (Either LdapError a)
 
@@ -141,7 +175,6 @@ SearchEntry (Dn "cn=me,ou=People,dc=nodomain")
 
 next:
 - find out what wire wants and construct that from somewhere
-- make mapping entries mandatory (especially `ScimSchema.userName`)
 - find out what AD usually provides and make sure we can express that in a yaml file
 
 -}
@@ -150,6 +183,7 @@ next:
 
 main :: IO ()
 main = do
+  myconf :: SearchConf <- ByteString.readFile "../sample-conf.yaml" >>= either (error . show) pure . Yaml.decodeEither'
   searchLdapUser myconf "john" >>= print
   listLdapUsers myconf >>= print
   ldaps :: [SearchEntry] <- either (error . show) pure =<< listLdapUsers myconf
