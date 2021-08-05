@@ -36,6 +36,9 @@ conf = Conf "localhost" 389 (Dn "") (Password "...") (Dn "")
 -- the same repo under `/examples/wire.com/`, and add a field to yaml that points to the
 -- downloaded csv file and the column with the ID for deletion information for all scim peers
 -- that do not implement "get all users" requests.
+--
+-- BETTER IDEA (thanks julia): Ad uses a deleted objects folder, so this makes sense to use
+-- that.  https://www.lepide.com/how-to/restore-deleted-objects-in-active-directory.html.
 
 someFunc :: IO (Either LdapError ())
 someFunc = do
