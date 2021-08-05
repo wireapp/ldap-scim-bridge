@@ -1,10 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# OPTIONS_GHC -Wno-unused-imports #-}
 
-module LdapScimBridge
-  ( someFunc,
-  )
-where
+module LdapScimBridge where
 
 import Control.Exception (bracket_)
 import Control.Monad (when)
@@ -18,38 +15,49 @@ import qualified Ldap.Client.Bind as Ldap
 import System.Exit (die)
 import qualified System.IO as IO
 
-data Conf = Conf
-  { host :: String,
-    port :: Int,
+type LdapResult a = IO (Either LdapError a)
+
+data SearchConf = Conf
+  { -- | eg. @Ldap.Tls (host conf) Ldap.defaultTlsSettings@
+    host :: Host,
+    -- | usually 389 for plaintext or 636 for TLS.
+    port :: PortNumber,
+    -- | `$ slapcat | grep ^modifiersName`, eg. @Dn "cn=admin,dc=nodomain"@.
     dn :: Dn,
     password :: Password,
-    base :: Dn
+    -- | `$ slapcat | grep ^dn`, eg. @Dn "dc=nodomain"@.
+    base :: Dn,
+    -- | eg. @Attr "objectClass" := "account"@.
+    fltr :: Filter
   }
-  deriving (Show, Eq)
 
-conf :: Conf
-conf = Conf "localhost" 389 (Dn "") (Password "...") (Dn "")
+myconf :: SearchConf
+myconf =
+  Conf
+    { host = Ldap.Plain "localhost",
+      port = 389,
+      dn = Dn "cn=admin,dc=nodomain",
+      password = Password "geheim hoch drei",
+      base = Dn "ou=People,dc=nodomain",
+      fltr = Attr "objectClass" := "account"
+    }
 
--- apt-get install ldapscripts ldap-utils slapd
+main :: IO ()
+main = do
+  searchLdapUser myconf "john" >>= print
+  listLdapUsers myconf >>= print
 
--- IDEA: use csv team download to compute deletees.  do that outside of this code base, but in
--- the same repo under `/examples/wire.com/`, and add a field to yaml that points to the
--- downloaded csv file and the column with the ID for deletion information for all scim peers
--- that do not implement "get all users" requests.
---
--- BETTER IDEA (thanks julia): Ad uses a deleted objects folder, so this makes sense to use
--- that.  https://www.lepide.com/how-to/restore-deleted-objects-in-active-directory.html.
+searchLdapUser :: SearchConf -> Text -> LdapResult [SearchEntry]
+searchLdapUser conf uid = Ldap.with (host conf) (port conf) $ \l -> do
+  Ldap.bind l (dn conf) (password conf)
+  Ldap.search
+    l
+    (base conf)
+    (typesOnly True)
+    (And (fltr conf :| [Attr "uid" := Text.encodeUtf8 uid]))
+    []
 
-someFunc :: IO (Either LdapError ())
-someFunc = do
-  Ldap.with (Ldap.Tls (host conf) Ldap.defaultTlsSettings) (fromIntegral (port conf)) $ \l -> do
-    Ldap.bind l (dn conf) (password conf)
-    let uid = "fisx"
-    us <-
-      Ldap.search
-        l
-        (base conf)
-        (typesOnly True)
-        (And ((Attr "objectClass" := "Person") :| [Attr "uid" := Text.encodeUtf8 uid]))
-        []
-    print us
+listLdapUsers :: SearchConf -> LdapResult [SearchEntry]
+listLdapUsers conf = Ldap.with (host conf) (port conf) $ \l -> do
+  Ldap.bind l (dn conf) (password conf)
+  Ldap.search l (base conf) mempty (fltr conf) mempty

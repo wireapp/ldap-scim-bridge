@@ -6,4 +6,18 @@
 [![Stackage Nightly](http://stackage.org/package/ldap-scim-bridge/badge/nightly)](http://stackage.org/nightly/package/ldap-scim-bridge)
 [![AGPL-3.0-only license](https://img.shields.io/badge/license-AGPL--3.0--only-blue.svg)](LICENSE)
 
-See README for more info
+# this is work in progress.  do not use!
+
+# notes
+
+https://devconnected.com/how-to-setup-openldap-server-on-debian-10/
+
+IDEA: use csv team download to compute deletees.  do that outside of
+this code base, but in the same repo under `/examples/wire.com/`, and
+add a field to yaml that points to the downloaded csv file and the
+column with the ID for deletion information for all scim peers that do
+not implement "get all users" requests.
+
+BETTER IDEA (thanks julia): Ad uses a deleted objects folder, so this
+makes sense to use that.
+https://www.lepide.com/how-to/restore-deleted-objects-in-active-directory.html.
