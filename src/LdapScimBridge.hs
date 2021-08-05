@@ -175,6 +175,8 @@ SearchEntry (Dn "cn=me,ou=People,dc=nodomain")
 
 next:
 - find out what wire wants and construct that from somewhere
+- write working mapping
+- write and run client against wire-server
 - find out what AD usually provides and make sure we can express that in a yaml file
 
 -}
