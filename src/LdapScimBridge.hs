@@ -22,8 +22,6 @@ import qualified System.IO as IO
 import qualified Web.Scim.Schema.User as ScimSchema
 import qualified Web.Scim.Server.Mock as ScimServer
 
-type LdapResult a = IO (Either LdapError a)
-
 data SearchConf = Conf
   { -- | eg. @Ldap.Tls (host conf) Ldap.defaultTlsSettings@
     host :: Host,
@@ -37,35 +35,9 @@ data SearchConf = Conf
     -- | eg. @Attr "objectClass" := "account"@.
     fltr :: Filter,
     -- | anything from "Data.Text.Encoding".
-    codec :: ByteString -> Text
+    codec :: ByteString -> Text,
+    mapping :: Mapping
   }
-
-myconf :: SearchConf
-myconf =
-  Conf
-    { host = Ldap.Plain "localhost",
-      port = 389,
-      dn = Dn "cn=admin,dc=nodomain",
-      password = Password "geheim hoch drei",
-      base = Dn "ou=People,dc=nodomain",
-      fltr = Attr "objectClass" := "account",
-      codec = Text.decodeUtf8
-    }
-
-searchLdapUser :: SearchConf -> Text -> LdapResult [SearchEntry]
-searchLdapUser conf uid = Ldap.with (host conf) (port conf) $ \l -> do
-  Ldap.bind l (dn conf) (password conf)
-  Ldap.search
-    l
-    (base conf)
-    (typesOnly True)
-    (And (fltr conf :| [Attr "uid" := Text.encodeUtf8 uid]))
-    []
-
-listLdapUsers :: SearchConf -> LdapResult [SearchEntry]
-listLdapUsers conf = Ldap.with (host conf) (port conf) $ \l -> do
-  Ldap.bind l (dn conf) (password conf)
-  Ldap.search l (base conf) mempty (fltr conf) mempty
 
 data MappingError
   = MissingAttr Text
@@ -86,26 +58,54 @@ newtype FieldMapping
 -- start off with an empty scim record, and change it based on attributes we find that are
 -- listed in the mapping.  Mappigns can fail, eg. if there is more than one attribute value
 -- for the attribute mapping to externalId.
-newtype Mapping = Mapping (Map Text FieldMapping)
+newtype Mapping = Mapping {fromMapping :: Map Text FieldMapping}
 
--- | (TODO: we can read this from a yaml file by mapping strings for the resp. user attributes
--- to these functions.)
-mymapping :: Mapping
-mymapping =
-  Mapping . Map.fromList $
-    [ ( "uidNumber",
-        FieldMapping $
-          \case
-            [val] -> Right $ \usr -> usr {ScimSchema.userName = val}
-            bad -> Left $ WrongNumberOfAttrValues "uidNumber" 1 (Prelude.length bad)
-      ),
-      ( "uid",
-        FieldMapping $
-          \case
-            [val] -> Right $ \usr -> usr {ScimSchema.externalId = Just val}
-            bad -> Left $ WrongNumberOfAttrValues "uid" 1 (Prelude.length bad)
-      )
-    ]
+myconf :: SearchConf
+myconf =
+  Conf
+    { host = Ldap.Plain "localhost",
+      port = 389,
+      dn = Dn "cn=admin,dc=nodomain",
+      password = Password "geheim hoch drei",
+      base = Dn "ou=People,dc=nodomain",
+      fltr = Attr "objectClass" := "account",
+      codec = Text.decodeUtf8,
+      mapping = mymapping
+    }
+  where
+    mymapping :: Mapping
+    mymapping =
+      Mapping . Map.fromList $
+        [ ( "uidNumber",
+            FieldMapping $
+              \case
+                [val] -> Right $ \usr -> usr {ScimSchema.userName = val}
+                bad -> Left $ WrongNumberOfAttrValues "uidNumber" 1 (Prelude.length bad)
+          ),
+          ( "uid",
+            FieldMapping $
+              \case
+                [val] -> Right $ \usr -> usr {ScimSchema.externalId = Just val}
+                bad -> Left $ WrongNumberOfAttrValues "uid" 1 (Prelude.length bad)
+          )
+        ]
+
+type LdapResult a = IO (Either LdapError a)
+
+searchLdapUser :: SearchConf -> Text -> LdapResult [SearchEntry]
+searchLdapUser conf uid = Ldap.with (host conf) (port conf) $ \l -> do
+  Ldap.bind l (dn conf) (password conf)
+  Ldap.search
+    l
+    (base conf)
+    (typesOnly True)
+    (And (fltr conf :| [Attr "uid" := Text.encodeUtf8 uid]))
+    []
+
+listLdapUsers :: SearchConf -> LdapResult [SearchEntry]
+listLdapUsers conf = Ldap.with (host conf) (port conf) $ \l -> do
+  Ldap.bind l (dn conf) (password conf)
+  Ldap.search l (base conf) mempty (fltr conf) mempty
 
 emptyScimUser :: ScimSchema.User ScimServer.Mock
 emptyScimUser = ScimSchema.empty [] undefined ScimSchema.NoUserExtra
@@ -114,13 +114,12 @@ ldapToScim ::
   forall scim.
   scim ~ Either [MappingError] (ScimSchema.User ScimServer.Mock) =>
   SearchConf ->
-  Mapping ->
   SearchEntry ->
   scim
-ldapToScim conf (Mapping mapping) (SearchEntry _ attrs) = Foldable.foldl' go (Right emptyScimUser) attrs
+ldapToScim conf (SearchEntry _ attrs) = Foldable.foldl' go (Right emptyScimUser) attrs
   where
     go :: scim -> (Attr, [AttrValue]) -> scim
-    go scimval (Attr key, vals) = case Map.lookup key mapping of
+    go scimval (Attr key, vals) = case Map.lookup key (fromMapping $ mapping conf) of
       Nothing -> scimval
       Just (FieldMapping f) -> case (scimval, f (codec conf <$> vals)) of
         (Right scimusr, Right f') -> Right (f' scimusr)
@@ -155,5 +154,5 @@ main = do
   listLdapUsers myconf >>= print
   ldaps :: [SearchEntry] <- either (error . show) pure =<< listLdapUsers myconf
   let scims :: [Either [MappingError] (ScimSchema.User ScimServer.Mock)]
-      scims = ldapToScim myconf mymapping <$> ldaps
+      scims = ldapToScim myconf <$> ldaps
   print scims
