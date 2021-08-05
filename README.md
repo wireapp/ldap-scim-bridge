@@ -21,3 +21,11 @@ not implement "get all users" requests.
 BETTER IDEA (thanks julia): Ad uses a deleted objects folder, so this
 makes sense to use that.
 https://www.lepide.com/how-to/restore-deleted-objects-in-active-directory.html.
+
+do we need to change the `Mock` tag for `Scim.User.User` to something
+more wire-like?  need to check!
+
+we may have to specify the encoding of ldap values in the yaml config
+as well (iso-latin or utf8 or whatever).  ldap-client gives us
+bytestring, which means it's not trusing the encoding to be anything
+in particular.
