@@ -32,6 +32,11 @@ conf = Conf "localhost" 389 (Dn "") (Password "...") (Dn "")
 
 -- apt-get install ldapscripts ldap-utils slapd
 
+-- IDEA: use csv team download to compute deletees.  do that outside of this code base, but in
+-- the same repo under `/examples/wire.com/`, and add a field to yaml that points to the
+-- downloaded csv file and the column with the ID for deletion information for all scim peers
+-- that do not implement "get all users" requests.
+
 someFunc :: IO (Either LdapError ())
 someFunc = do
   Ldap.with (Ldap.Tls (host conf) Ldap.defaultTlsSettings) (fromIntegral (port conf)) $ \l -> do
