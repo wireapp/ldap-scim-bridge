@@ -178,6 +178,7 @@ next:
 - write working mapping
 - write and run client against wire-server
 - find out what AD usually provides and make sure we can express that in a yaml file
+- don't just post, but also do update and delete appropriately
 
 -}
 
