@@ -24,6 +24,7 @@ import Ldap.Client as Ldap
 import qualified Ldap.Client.Bind as Ldap
 import System.Exit (die)
 import qualified System.IO as IO
+import qualified Web.Scim.Schema.Schema
 import qualified Web.Scim.Schema.User as ScimSchema
 import qualified Web.Scim.Server.Mock as ScimServer
 
@@ -83,7 +84,7 @@ instance Aeson.FromJSON SearchConf where
 
 data MappingError
   = MissingAttr Text
-  | WrongNumberOfAttrValues Text Int Int
+  | WrongNumberOfAttrValues Text String Int
   deriving (Eq, Show)
 
 newtype FieldMapping
@@ -117,14 +118,18 @@ instance Aeson.FromJSON Mapping where
       mapUserName ldapFieldName = FieldMapping $
         \case
           [val] -> Right $ \usr -> usr {ScimSchema.userName = val}
-          bad -> Left $ WrongNumberOfAttrValues ldapFieldName 1 (Prelude.length bad)
+          bad -> Left $ WrongNumberOfAttrValues ldapFieldName "1" (Prelude.length bad)
 
       mapExternalId ldapFieldName = FieldMapping $
         \case
           [val] -> Right $ \usr -> usr {ScimSchema.externalId = Just val}
-          bad -> Left $ WrongNumberOfAttrValues ldapFieldName 1 (Prelude.length bad)
+          bad -> Left $ WrongNumberOfAttrValues ldapFieldName "1" (Prelude.length bad)
 
-      mapEmail = error "now we can allow 0 or more than 1 values!"
+      mapEmail ldapFieldName = FieldMapping $
+        \case
+          [] -> Right id
+          [val] -> Right $ \usr -> usr {ScimSchema.emails = _} --(\val -> object ["value" Aeson.= val]) <$> vals}
+          bad -> Left $ WrongNumberOfAttrValues ldapFieldName "<= 1" (Prelude.length bad)
 
 type LdapResult a = IO (Either LdapError a)
 
@@ -146,7 +151,10 @@ listLdapUsers conf = Ldap.with (host conf) (port conf) $ \l -> do
 -- | the 'undefined' is ok, the mapping is guaranteed to contain a filler for this, or the
 -- mapping parser would have failed.
 emptyScimUser :: ScimSchema.User ScimServer.Mock
-emptyScimUser = ScimSchema.empty [] undefined ScimSchema.NoUserExtra
+emptyScimUser =
+  ScimSchema.empty schemas undefined ScimSchema.NoUserExtra
+  where
+    schemas = [Web.Scim.Schema.Schema.User20]
 
 ldapToScim ::
   forall scim.

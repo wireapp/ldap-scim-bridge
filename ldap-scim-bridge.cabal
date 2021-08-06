@@ -5,7 +5,7 @@ synopsis:            See README for more info
 description:         See README for more info
 homepage:            https://github.com/fisx/ldap-scim-bridge
 bug-reports:         https://github.com/fisx/ldap-scim-bridge/issues
-license:             AGPL-3.0-or-higher
+license:             AGPL-3.0-or-later
 license-file:        LICENSE
 author:              Matthias Fischmann
 maintainer:          Matthias Fischmann <mf@zerobuzz.net>
