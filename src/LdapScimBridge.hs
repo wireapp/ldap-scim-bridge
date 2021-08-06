@@ -6,8 +6,10 @@ module LdapScimBridge where
 import Control.Exception (bracket_)
 import Control.Monad (when)
 import qualified Data.Aeson as Aeson
+import qualified Data.Aeson.Encode.Pretty as Aeson
 import Data.ByteString.Char8 (ByteString)
 import qualified Data.ByteString.Char8 as ByteString
+import qualified Data.ByteString.Lazy.Char8 as LByteString
 import qualified Data.Foldable as Foldable
 import Data.Function (fix)
 import Data.List.NonEmpty
@@ -141,6 +143,8 @@ listLdapUsers conf = Ldap.with (host conf) (port conf) $ \l -> do
   Ldap.bind l (dn conf) (password conf)
   Ldap.search l (base conf) mempty (fltr conf) mempty
 
+-- | the 'undefined' is ok, the mapping is guaranteed to contain a filler for this, or the
+-- mapping parser would have failed.
 emptyScimUser :: ScimSchema.User ScimServer.Mock
 emptyScimUser = ScimSchema.empty [] undefined ScimSchema.NoUserExtra
 
@@ -190,6 +194,7 @@ main = do
   searchLdapUser myconf "john" >>= print
   listLdapUsers myconf >>= print
   ldaps :: [SearchEntry] <- either (error . show) pure =<< listLdapUsers myconf
-  let scims :: [Either [MappingError] (ScimSchema.User ScimServer.Mock)]
-      scims = ldapToScim myconf <$> ldaps
-  print scims
+  let mbScims :: [Either [MappingError] (ScimSchema.User ScimServer.Mock)]
+      mbScims = ldapToScim myconf <$> ldaps
+  scims :: [ScimSchema.User ScimServer.Mock] <- mapM (either (error . show) pure) mbScims
+  LByteString.putStrLn $ Aeson.encodePretty scims
