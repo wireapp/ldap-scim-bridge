@@ -16,6 +16,7 @@ import Data.List.NonEmpty
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Maybe (catMaybes)
+import qualified Data.String.Conversions as SC
 import Data.Text (Text)
 import qualified Data.Text.Encoding as Text
 import qualified Data.Text.IO as Text
@@ -24,8 +25,10 @@ import Ldap.Client as Ldap
 import qualified Ldap.Client.Bind as Ldap
 import System.Exit (die)
 import qualified System.IO as IO
+import qualified Text.Email.Validate
 import qualified Web.Scim.Schema.Schema
 import qualified Web.Scim.Schema.User as ScimSchema
+import qualified Web.Scim.Schema.User.Email as ScimSchema
 import qualified Web.Scim.Server.Mock as ScimServer
 
 data SearchConf = SearchConf
@@ -85,6 +88,7 @@ instance Aeson.FromJSON SearchConf where
 data MappingError
   = MissingAttr Text
   | WrongNumberOfAttrValues Text String Int
+  | CouldNotParseEmail Text String
   deriving (Eq, Show)
 
 newtype FieldMapping
@@ -128,8 +132,19 @@ instance Aeson.FromJSON Mapping where
       mapEmail ldapFieldName = FieldMapping $
         \case
           [] -> Right id
-          [val] -> Right $ \usr -> usr {ScimSchema.emails = _} --(\val -> object ["value" Aeson.= val]) <$> vals}
-          bad -> Left $ WrongNumberOfAttrValues ldapFieldName "<= 1" (Prelude.length bad)
+          [val] -> case Text.Email.Validate.validate (SC.cs val) of
+            Right email -> Right $ \usr ->
+              usr
+                { ScimSchema.emails =
+                    [ScimSchema.Email Nothing (ScimSchema.EmailAddress2 email) Nothing]
+                }
+            Left err -> Left $ CouldNotParseEmail val err
+          bad ->
+            Left $
+              WrongNumberOfAttrValues
+                ldapFieldName
+                "<=1 (with more than one email, which one should be primary?)"
+                (Prelude.length bad)
 
 type LdapResult a = IO (Either LdapError a)
 
@@ -172,27 +187,6 @@ ldapToScim conf (SearchEntry _ attrs) = Foldable.foldl' go (Right emptyScimUser)
         (Right _, Left err) -> Left [err]
         (Left errs, Right _) -> Left errs
         (Left errs, Left err) -> Left (err : errs)
-
-{-
-SearchEntry (Dn "cn=me,ou=People,dc=nodomain")
-[(Attr "objectClass",["top","account","posixAccount","shadowAccount"])
-,(Attr "cn",["me"])
-,(Attr "uid",["me"])
-,(Attr "uidNumber",["10003"])
-,(Attr "gidNumber",["10003"])
-,(Attr "homeDirectory",["/home/me"])
-,(Attr "userPassword",["notgonnatelleither"])
-,(Attr "loginShell",["/bin/bash"])
-]
-
-next:
-- find out what wire wants and construct that from somewhere
-- write working mapping
-- write and run client against wire-server
-- find out what AD usually provides and make sure we can express that in a yaml file
-- don't just post, but also do update and delete appropriately
-
--}
 
 ----------------------------------------------------------------------
 

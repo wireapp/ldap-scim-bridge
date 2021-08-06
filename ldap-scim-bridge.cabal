@@ -32,6 +32,8 @@ common common-options
                      , aeson-pretty >=0.8.8 && <0.9
                      , containers >= 0.6.2.1 && < 0.7
                      , bytestring >= 0.10.12 && < 0.11
+                     , email-validate >= 2.3.2.13 && < 2.4
+                     , string-conversions >= 0.4.0.1 && < 0.5
 
   mixins:              base hiding (Prelude)
                      , relude (Relude as Prelude)

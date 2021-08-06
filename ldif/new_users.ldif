@@ -36,3 +36,18 @@ gidNumber: 10003
 homeDirectory: /home/me
 userPassword: notgonnatelleither
 loginShell: /bin/bash
+
+dn: cn=usesemail,ou=People,dc=nodomain
+objectClass: top
+objectClass: account
+objectClass: posixAccount
+objectClass: shadowAccount
+objectClass: extensibleObject
+cn: usesemail
+uid: usesemail
+uidNumber: 10004
+gidNumber: 10004
+email: uses@example.com
+homeDirectory: /home/me
+userPassword: notgonnatelleither
+loginShell: /bin/bash

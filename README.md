@@ -29,3 +29,42 @@ we may have to specify the encoding of ldap values in the yaml config
 as well (iso-latin or utf8 or whatever).  ldap-client gives us
 bytestring, which means it's not trusing the encoding to be anything
 in particular.
+
+
+specific to wire, but we may want to add this:
+  {- TODO:
+      schemas:
+        - "urn:wire:scim:schemas:profile:1.0"
+        - "urn:ietf:params:scim:schemas:extension:wire:1.0:User"
+      looking like this:
+      { ...,
+        "urn:wire:scim:schemas:profile:1.0": {
+          "richInfo": {
+            "version": 0,
+            "fields": [
+              {
+                "value": "hair color",
+                "type": "green"
+              },
+              {
+                "value": "title",
+                "type": "galactic overlord"
+              }
+            ]
+          }
+        },
+        "urn:ietf:params:scim:schemas:extension:wire:1.0:User": {
+          "hair color": "green",
+          "title": "galactic overlord"
+        },
+        ...
+      }
+  -}
+
+
+
+next:
+- post to wire
+- update
+- delete
+- done!

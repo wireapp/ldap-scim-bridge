@@ -9,3 +9,4 @@ codec: "utf8"
 mapping:
   userName: "uidNumber"
   externalId: "uid"
+  email: "email"
