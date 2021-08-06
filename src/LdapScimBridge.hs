@@ -1,9 +1,9 @@
 {-# LANGUAGE OverloadedStrings #-}
-{-# OPTIONS_GHC -Wno-unused-imports #-}
+{-# OPTIONS_GHC -Wno-unused-imports -Wno-missing-export-lists #-}
 
 module LdapScimBridge where
 
-import Control.Exception (bracket_)
+import Control.Exception (bracket_, throwIO)
 import Control.Monad (when)
 import qualified Data.Aeson as Aeson
 import qualified Data.Aeson.Encode.Pretty as Aeson
@@ -23,12 +23,19 @@ import qualified Data.Text.IO as Text
 import qualified Data.Yaml as Yaml
 import Ldap.Client as Ldap
 import qualified Ldap.Client.Bind as Ldap
+import Servant.API.ContentTypes (NoContent)
+import Servant.API.Generic (ToServant)
+import Servant.Client (runClientM)
+import Servant.Client.Generic (AsClientT, genericClientHoist)
 import System.Exit (die)
 import qualified System.IO as IO
 import qualified Text.Email.Validate
-import qualified Web.Scim.Schema.Schema
+import qualified Web.Scim.Class.User as ScimSite
+import qualified Web.Scim.Schema.ListResponse as Scim
+import qualified Web.Scim.Schema.Schema as Scim
 import qualified Web.Scim.Schema.User as ScimSchema
 import qualified Web.Scim.Schema.User.Email as ScimSchema
+import qualified Web.Scim.Server as ScimServer
 import qualified Web.Scim.Server.Mock as ScimServer
 
 data SearchConf = SearchConf
@@ -89,7 +96,7 @@ data MappingError
   = MissingAttr Text
   | WrongNumberOfAttrValues Text String Int
   | CouldNotParseEmail Text String
-  deriving (Eq, Show)
+  deriving stock (Eq, Show)
 
 newtype FieldMapping
   = FieldMapping
@@ -167,9 +174,9 @@ listLdapUsers conf = Ldap.with (host conf) (port conf) $ \l -> do
 -- mapping parser would have failed.
 emptyScimUser :: ScimSchema.User ScimServer.Mock
 emptyScimUser =
-  ScimSchema.empty schemas undefined ScimSchema.NoUserExtra
+  ScimSchema.empty schemas (error "undefined") ScimSchema.NoUserExtra
   where
-    schemas = [Web.Scim.Schema.Schema.User20]
+    schemas = [Scim.User20]
 
 ldapToScim ::
   forall scim.
@@ -188,11 +195,28 @@ ldapToScim conf (SearchEntry _ attrs) = Foldable.foldl' go (Right emptyScimUser)
         (Left errs, Right _) -> Left errs
         (Left errs, Left err) -> Left (err : errs)
 
+scimRoutes :: (ScimSite.UserSite ScimServer.Mock) (AsClientT IO)
+scimRoutes = genericClientHoist $ \x -> runClientM x env >>= either throwIO return
+  where
+    env = error "undefined environment"
+
+scimRead :: ScimServer.Id -> IO (ScimSite.StoredUser ScimServer.Mock)
+scimRead = ScimSite.usGetUser scimRoutes
+
+scimCreate :: ScimSchema.User ScimServer.Mock -> IO (ScimSite.StoredUser ScimServer.Mock)
+scimCreate = ScimSite.usPostUser scimRoutes
+
+scimUpdate :: ScimServer.Id -> ScimSchema.User ScimServer.Mock -> IO (ScimSite.StoredUser ScimServer.Mock)
+scimUpdate = ScimSite.usPutUser scimRoutes
+
+scimDelete :: ScimServer.Id -> IO NoContent
+scimDelete = ScimSite.usDeleteUser scimRoutes
+
 ----------------------------------------------------------------------
 
 main :: IO ()
 main = do
-  myconf :: SearchConf <- ByteString.readFile "../sample-conf.yaml" >>= either (error . show) pure . Yaml.decodeEither'
+  myconf :: SearchConf <- ByteString.readFile "./sample-conf.yaml" >>= either (error . show) pure . Yaml.decodeEither'
   searchLdapUser myconf "john" >>= print
   listLdapUsers myconf >>= print
   ldaps :: [SearchEntry] <- either (error . show) pure =<< listLdapUsers myconf
@@ -200,3 +224,4 @@ main = do
       mbScims = ldapToScim myconf <$> ldaps
   scims :: [ScimSchema.User ScimServer.Mock] <- mapM (either (error . show) pure) mbScims
   LByteString.putStrLn $ Aeson.encodePretty scims
+  error "and now send it all to wire!  clients are ready!"

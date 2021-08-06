@@ -62,6 +62,8 @@ specific to wire, but we may want to add this:
   -}
 
 
+objectClass `extensibleObject` could be replaced by `iNetOrgPerson`.  both works.
+
 
 next:
 - post to wire
