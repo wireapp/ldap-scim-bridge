@@ -23,7 +23,7 @@ source-repository head
 common common-options
   build-depends:       base >=4.13 && <4.15
                      , relude
-                     , hscim >=0.3.4 && <0.4
+                     , hscim >=0.3.5 && <0.4
                      , ldap-client >=0.4.1 && <0.5
                      , network >=3.1.1.1 && <3.2
                      , text >=1.2.4.1 && <1.3
@@ -37,6 +37,7 @@ common common-options
                      , servant-client >=0.18.3 && <0.19
                      , servant-client-core >=0.18.3 && <0.19
                      , servant >=0.18.3 && <0.19
+                     , http-types >=0.12.3 && < 0.13
 
   mixins:              base hiding (Prelude)
                      , relude (Relude as Prelude)

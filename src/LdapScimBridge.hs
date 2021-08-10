@@ -23,18 +23,21 @@ import qualified Data.Text.IO as Text
 import qualified Data.Yaml as Yaml
 import Ldap.Client as Ldap
 import qualified Ldap.Client.Bind as Ldap
+import Servant.API (Header, (:<|>) ((:<|>)), (:>))
 import Servant.API.ContentTypes (NoContent)
 import Servant.API.Generic (ToServant)
-import Servant.Client (runClientM)
+import Servant.Client (ClientM, client, runClientM)
 import Servant.Client.Generic (AsClientT, genericClientHoist)
 import System.Exit (die)
 import qualified System.IO as IO
 import qualified Text.Email.Validate
-import qualified Web.Scim.Class.User as ScimSite
+import qualified Web.Scim.Class.Auth as ScimClass
+import qualified Web.Scim.Class.User as ScimClass
+import qualified Web.Scim.Client as ScimClient
 import qualified Web.Scim.Schema.ListResponse as Scim
 import qualified Web.Scim.Schema.Schema as Scim
-import qualified Web.Scim.Schema.User as ScimSchema
-import qualified Web.Scim.Schema.User.Email as ScimSchema
+import qualified Web.Scim.Schema.User as Scim
+import qualified Web.Scim.Schema.User.Email as Scim
 import qualified Web.Scim.Server as ScimServer
 import qualified Web.Scim.Server.Mock as ScimServer
 
@@ -103,8 +106,8 @@ newtype FieldMapping
       ( [Text] ->
         Either
           MappingError
-          ( ScimSchema.User ScimServer.Mock ->
-            ScimSchema.User ScimServer.Mock
+          ( Scim.User ScimServer.Mock ->
+            Scim.User ScimServer.Mock
           )
       )
 
@@ -128,12 +131,12 @@ instance Aeson.FromJSON Mapping where
     where
       mapUserName ldapFieldName = FieldMapping $
         \case
-          [val] -> Right $ \usr -> usr {ScimSchema.userName = val}
+          [val] -> Right $ \usr -> usr {Scim.userName = val}
           bad -> Left $ WrongNumberOfAttrValues ldapFieldName "1" (Prelude.length bad)
 
       mapExternalId ldapFieldName = FieldMapping $
         \case
-          [val] -> Right $ \usr -> usr {ScimSchema.externalId = Just val}
+          [val] -> Right $ \usr -> usr {Scim.externalId = Just val}
           bad -> Left $ WrongNumberOfAttrValues ldapFieldName "1" (Prelude.length bad)
 
       mapEmail ldapFieldName = FieldMapping $
@@ -142,8 +145,8 @@ instance Aeson.FromJSON Mapping where
           [val] -> case Text.Email.Validate.validate (SC.cs val) of
             Right email -> Right $ \usr ->
               usr
-                { ScimSchema.emails =
-                    [ScimSchema.Email Nothing (ScimSchema.EmailAddress2 email) Nothing]
+                { Scim.emails =
+                    [Scim.Email Nothing (Scim.EmailAddress2 email) Nothing]
                 }
             Left err -> Left $ CouldNotParseEmail val err
           bad ->
@@ -170,17 +173,21 @@ listLdapUsers conf = Ldap.with (host conf) (port conf) $ \l -> do
   Ldap.bind l (dn conf) (password conf)
   Ldap.search l (base conf) mempty (fltr conf) mempty
 
+type User = Scim.User ScimServer.Mock
+
+type StoredUser = ScimClass.StoredUser ScimServer.Mock
+
 -- | the 'undefined' is ok, the mapping is guaranteed to contain a filler for this, or the
 -- mapping parser would have failed.
-emptyScimUser :: ScimSchema.User ScimServer.Mock
+emptyScimUser :: User
 emptyScimUser =
-  ScimSchema.empty schemas (error "undefined") ScimSchema.NoUserExtra
+  Scim.empty schemas (error "undefined") Scim.NoUserExtra
   where
     schemas = [Scim.User20]
 
 ldapToScim ::
   forall scim.
-  scim ~ Either [MappingError] (ScimSchema.User ScimServer.Mock) =>
+  scim ~ Either [MappingError] User =>
   SearchConf ->
   SearchEntry ->
   scim
@@ -195,23 +202,6 @@ ldapToScim conf (SearchEntry _ attrs) = Foldable.foldl' go (Right emptyScimUser)
         (Left errs, Right _) -> Left errs
         (Left errs, Left err) -> Left (err : errs)
 
-scimRoutes :: (ScimSite.UserSite ScimServer.Mock) (AsClientT IO)
-scimRoutes = genericClientHoist $ \x -> runClientM x env >>= either throwIO return
-  where
-    env = error "undefined environment"
-
-scimRead :: ScimServer.Id -> IO (ScimSite.StoredUser ScimServer.Mock)
-scimRead = ScimSite.usGetUser scimRoutes
-
-scimCreate :: ScimSchema.User ScimServer.Mock -> IO (ScimSite.StoredUser ScimServer.Mock)
-scimCreate = ScimSite.usPostUser scimRoutes
-
-scimUpdate :: ScimServer.Id -> ScimSchema.User ScimServer.Mock -> IO (ScimSite.StoredUser ScimServer.Mock)
-scimUpdate = ScimSite.usPutUser scimRoutes
-
-scimDelete :: ScimServer.Id -> IO NoContent
-scimDelete = ScimSite.usDeleteUser scimRoutes
-
 ----------------------------------------------------------------------
 
 main :: IO ()
@@ -220,8 +210,8 @@ main = do
   searchLdapUser myconf "john" >>= print
   listLdapUsers myconf >>= print
   ldaps :: [SearchEntry] <- either (error . show) pure =<< listLdapUsers myconf
-  let mbScims :: [Either [MappingError] (ScimSchema.User ScimServer.Mock)]
+  let mbScims :: [Either [MappingError] User]
       mbScims = ldapToScim myconf <$> ldaps
-  scims :: [ScimSchema.User ScimServer.Mock] <- mapM (either (error . show) pure) mbScims
+  scims :: [User] <- mapM (either (error . show) pure) mbScims
   LByteString.putStrLn $ Aeson.encodePretty scims
   error "and now send it all to wire!  clients are ready!"
