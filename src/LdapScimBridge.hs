@@ -41,7 +41,7 @@ import qualified Web.Scim.Schema.User.Email as Scim
 import qualified Web.Scim.Server as ScimServer
 import qualified Web.Scim.Server.Mock as ScimServer
 
-data SearchConf = SearchConf
+data BridgeConf = BridgeConf
   { -- | eg. @Ldap.Tls (host conf) Ldap.defaultTlsSettings@
     host :: Host,
     -- | usually 389 for plaintext or 636 for TLS.
@@ -58,8 +58,8 @@ data SearchConf = SearchConf
     mapping :: Mapping
   }
 
-instance Aeson.FromJSON SearchConf where
-  parseJSON = Aeson.withObject "SearchConf" $ \obj -> do
+instance Aeson.FromJSON BridgeConf where
+  parseJSON = Aeson.withObject "BridgeConf" $ \obj -> do
     ftls :: Bool <- obj Aeson..: "tls"
     fhost :: String <- obj Aeson..: "host"
     fport :: Int <- obj Aeson..: "port"
@@ -84,7 +84,7 @@ instance Aeson.FromJSON SearchConf where
       bad -> fail $ "unsupported codec: " <> show bad
 
     pure $
-      SearchConf
+      BridgeConf
         { host = vhost,
           port = vport,
           dn = Dn fdn,
@@ -158,7 +158,7 @@ instance Aeson.FromJSON Mapping where
 
 type LdapResult a = IO (Either LdapError a)
 
-searchLdapUser :: SearchConf -> Text -> LdapResult [SearchEntry]
+searchLdapUser :: BridgeConf -> Text -> LdapResult [SearchEntry]
 searchLdapUser conf uid = Ldap.with (host conf) (port conf) $ \l -> do
   Ldap.bind l (dn conf) (password conf)
   Ldap.search
@@ -168,7 +168,7 @@ searchLdapUser conf uid = Ldap.with (host conf) (port conf) $ \l -> do
     (And (fltr conf :| [Attr "uid" := Text.encodeUtf8 uid]))
     []
 
-listLdapUsers :: SearchConf -> LdapResult [SearchEntry]
+listLdapUsers :: BridgeConf -> LdapResult [SearchEntry]
 listLdapUsers conf = Ldap.with (host conf) (port conf) $ \l -> do
   Ldap.bind l (dn conf) (password conf)
   Ldap.search l (base conf) mempty (fltr conf) mempty
@@ -188,7 +188,7 @@ emptyScimUser =
 ldapToScim ::
   forall scim.
   scim ~ Either [MappingError] User =>
-  SearchConf ->
+  BridgeConf ->
   SearchEntry ->
   scim
 ldapToScim conf (SearchEntry _ attrs) = Foldable.foldl' go (Right emptyScimUser) attrs
@@ -202,11 +202,17 @@ ldapToScim conf (SearchEntry _ attrs) = Foldable.foldl' go (Right emptyScimUser)
         (Left errs, Right _) -> Left errs
         (Left errs, Left err) -> Left (err : errs)
 
+updateScimPeer :: BridgeConf -> [User] -> IO [StoredUser]
+updateScimPeer conf scims = do
+  let clientEnv = undefined conf
+      tok = undefined conf
+  ScimClient.postUser clientEnv (Just tok) `mapM` scims
+
 ----------------------------------------------------------------------
 
 main :: IO ()
 main = do
-  myconf :: SearchConf <- ByteString.readFile "./sample-conf.yaml" >>= either (error . show) pure . Yaml.decodeEither'
+  myconf :: BridgeConf <- ByteString.readFile "./sample-conf.yaml" >>= either (error . show) pure . Yaml.decodeEither'
   searchLdapUser myconf "john" >>= print
   listLdapUsers myconf >>= print
   ldaps :: [SearchEntry] <- either (error . show) pure =<< listLdapUsers myconf
@@ -214,4 +220,33 @@ main = do
       mbScims = ldapToScim myconf <$> ldaps
   scims :: [User] <- mapM (either (error . show) pure) mbScims
   LByteString.putStrLn $ Aeson.encodePretty scims
-  error "and now send it all to wire!  clients are ready!"
+  updateScimPeer myconf scims >>= print
+
+{-
+
+getUser ::
+  HasScimClient tag =>
+  ClientEnv ->
+  Maybe (AuthData tag) ->
+  UserId tag ->
+  IO (StoredUser tag)
+getUser env tok = case users (scimClients env) tok of ((_ :<|> (r :<|> _)) :<|> (_ :<|> (_ :<|> _))) -> r
+
+postUser ::
+  HasScimClient tag =>
+  ClientEnv ->
+  Maybe (AuthData tag) ->
+  (User tag) ->
+  IO (StoredUser tag)
+postUser env tok = case users (scimClients env) tok of ((_ :<|> (_ :<|> r)) :<|> (_ :<|> (_ :<|> _))) -> r
+
+putUser ::
+  HasScimClient tag =>
+  ClientEnv ->
+  Maybe (AuthData tag) ->
+  UserId tag ->
+  (User tag) ->
+  IO (StoredUser tag)
+putUser env tok = case users (scimClients env) tok of ((_ :<|> (_ :<|> _)) :<|> (r :<|> (_ :<|> _))) -> r
+
+-}
