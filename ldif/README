@@ -1,2 +1,0 @@
-apt-get install ldapscripts ldap-utils slapd
-ldapadd -D "cn=admin,dc=nodomain" -W -H ldapi:/// -f ./<...>.ldif
