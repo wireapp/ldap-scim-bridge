@@ -37,7 +37,9 @@ common common-options
                      , servant-client >=0.18.3 && <0.19
                      , servant-client-core >=0.18.3 && <0.19
                      , servant >=0.18.3 && <0.19
-                     , http-types >=0.12.3 && < 0.13
+                     , http-types >=0.12.3 && <0.13
+                     , string-conversions >=0.4.0.1 && <0.5
+                     , http-client >=0.7.8 && <0.8
 
   mixins:              base hiding (Prelude)
                      , relude (Relude as Prelude)

@@ -3,10 +3,11 @@
 
 module LdapScimBridge where
 
-import Control.Exception (bracket_, throwIO)
+import Control.Exception (ErrorCall (ErrorCall), bracket_, catch, throwIO)
 import Control.Monad (when)
 import qualified Data.Aeson as Aeson
 import qualified Data.Aeson.Encode.Pretty as Aeson
+import qualified Data.Bifunctor as Bifunctor
 import Data.ByteString.Char8 (ByteString)
 import qualified Data.ByteString.Char8 as ByteString
 import qualified Data.ByteString.Lazy.Char8 as LByteString
@@ -16,6 +17,7 @@ import Data.List.NonEmpty
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Maybe (catMaybes)
+import Data.String.Conversions (cs)
 import qualified Data.String.Conversions as SC
 import Data.Text (Text)
 import qualified Data.Text.Encoding as Text
@@ -23,11 +25,13 @@ import qualified Data.Text.IO as Text
 import qualified Data.Yaml as Yaml
 import Ldap.Client as Ldap
 import qualified Ldap.Client.Bind as Ldap
+import qualified Network.HTTP.Client as HTTP
 import Servant.API (Header, (:<|>) ((:<|>)), (:>))
 import Servant.API.ContentTypes (NoContent)
 import Servant.API.Generic (ToServant)
-import Servant.Client (ClientM, client, runClientM)
+import Servant.Client (BaseUrl (..), ClientEnv (..), ClientM, Scheme (..), client, mkClientEnv, runClientM)
 import Servant.Client.Generic (AsClientT, genericClientHoist)
+import System.Environment (getProgName)
 import System.Exit (die)
 import qualified System.IO as IO
 import qualified Text.Email.Validate
@@ -41,25 +45,24 @@ import qualified Web.Scim.Schema.User.Email as Scim
 import qualified Web.Scim.Server as ScimServer
 import qualified Web.Scim.Server.Mock as ScimServer
 
-data BridgeConf = BridgeConf
+data LdapConf = LdapConf
   { -- | eg. @Ldap.Tls (host conf) Ldap.defaultTlsSettings@
-    host :: Host,
+    ldapHost :: Host,
     -- | usually 389 for plaintext or 636 for TLS.
-    port :: PortNumber,
+    ldapPort :: PortNumber,
     -- | `$ slapcat | grep ^modifiersName`, eg. @Dn "cn=admin,dc=nodomain"@.
-    dn :: Dn,
-    password :: Password,
+    ldapDn :: Dn,
+    ldapPassword :: Password,
     -- | `$ slapcat | grep ^dn`, eg. @Dn "dc=nodomain"@.
-    base :: Dn,
+    ldapBase :: Dn,
     -- | eg. @Attr "objectClass" := "account"@.
-    fltr :: Filter,
+    ldapFltr :: Filter,
     -- | anything from "Data.Text.Encoding".
-    codec :: ByteString -> Text,
-    mapping :: Mapping
+    ldapCodec :: ByteString -> Text
   }
 
-instance Aeson.FromJSON BridgeConf where
-  parseJSON = Aeson.withObject "BridgeConf" $ \obj -> do
+instance Aeson.FromJSON LdapConf where
+  parseJSON = Aeson.withObject "LdapConf" $ \obj -> do
     ftls :: Bool <- obj Aeson..: "tls"
     fhost :: String <- obj Aeson..: "host"
     fport :: Int <- obj Aeson..: "port"
@@ -68,7 +71,6 @@ instance Aeson.FromJSON BridgeConf where
     fbase :: Text <- obj Aeson..: "base"
     fobjectClass :: String <- obj Aeson..: "objectClass"
     fcodec :: Text <- obj Aeson..: "codec"
-    fmapping :: Mapping <- obj Aeson..: "mapping"
 
     let vhost :: Host
         vhost = case ftls of
@@ -84,16 +86,42 @@ instance Aeson.FromJSON BridgeConf where
       bad -> fail $ "unsupported codec: " <> show bad
 
     pure $
-      BridgeConf
-        { host = vhost,
-          port = vport,
-          dn = Dn fdn,
-          password = Password $ ByteString.pack fpassword,
-          base = Dn fbase,
-          fltr = Attr "objectClass" := ByteString.pack fobjectClass,
-          codec = vcodec,
-          mapping = fmapping
+      LdapConf
+        { ldapHost = vhost,
+          ldapPort = vport,
+          ldapDn = Dn fdn,
+          ldapPassword = Password $ ByteString.pack fpassword,
+          ldapBase = Dn fbase,
+          ldapFltr = Attr "objectClass" := ByteString.pack fobjectClass,
+          ldapCodec = vcodec
         }
+
+data ScimConf = ScimConf
+  { scimTls :: Bool,
+    scimHost :: String,
+    scimPort :: Int,
+    scimPath :: String,
+    scimToken :: Text
+  }
+  deriving stock (Generic)
+
+instance Aeson.FromJSON ScimConf where
+  parseJSON = Aeson.withObject "ScimConf" $ \obj -> do
+    ScimConf
+      <$> obj Aeson..: "tls"
+      <*> obj Aeson..: "host"
+      <*> obj Aeson..: "port"
+      <*> obj Aeson..: "path"
+      <*> obj Aeson..: "token"
+
+data BridgeConf = BridgeConf
+  { ldapSource :: LdapConf,
+    scimTarget :: ScimConf,
+    mapping :: Mapping
+  }
+  deriving stock (Generic)
+
+instance Aeson.FromJSON BridgeConf
 
 data MappingError
   = MissingAttr Text
@@ -158,20 +186,20 @@ instance Aeson.FromJSON Mapping where
 
 type LdapResult a = IO (Either LdapError a)
 
-searchLdapUser :: BridgeConf -> Text -> LdapResult [SearchEntry]
-searchLdapUser conf uid = Ldap.with (host conf) (port conf) $ \l -> do
-  Ldap.bind l (dn conf) (password conf)
+searchLdapUser :: LdapConf -> Text -> LdapResult [SearchEntry]
+searchLdapUser conf uid = Ldap.with (ldapHost conf) (ldapPort conf) $ \l -> do
+  Ldap.bind l (ldapDn conf) (ldapPassword conf)
   Ldap.search
     l
-    (base conf)
+    (ldapBase conf)
     (typesOnly True)
-    (And (fltr conf :| [Attr "uid" := Text.encodeUtf8 uid]))
+    (And (ldapFltr conf :| [Attr "uid" := Text.encodeUtf8 uid]))
     []
 
-listLdapUsers :: BridgeConf -> LdapResult [SearchEntry]
-listLdapUsers conf = Ldap.with (host conf) (port conf) $ \l -> do
-  Ldap.bind l (dn conf) (password conf)
-  Ldap.search l (base conf) mempty (fltr conf) mempty
+listLdapUsers :: LdapConf -> LdapResult [SearchEntry]
+listLdapUsers conf = Ldap.with (ldapHost conf) (ldapPort conf) $ \l -> do
+  Ldap.bind l (ldapDn conf) (ldapPassword conf)
+  Ldap.search l (ldapBase conf) mempty (ldapFltr conf) mempty
 
 type User = Scim.User ScimServer.Mock
 
@@ -196,57 +224,59 @@ ldapToScim conf (SearchEntry _ attrs) = Foldable.foldl' go (Right emptyScimUser)
     go :: scim -> (Attr, [AttrValue]) -> scim
     go scimval (Attr key, vals) = case Map.lookup key (fromMapping $ mapping conf) of
       Nothing -> scimval
-      Just (FieldMapping f) -> case (scimval, f (codec conf <$> vals)) of
+      Just (FieldMapping f) -> case (scimval, f (ldapCodec (ldapSource conf) <$> vals)) of
         (Right scimusr, Right f') -> Right (f' scimusr)
         (Right _, Left err) -> Left [err]
         (Left errs, Right _) -> Left errs
         (Left errs, Left err) -> Left (err : errs)
 
+connectScim :: ScimConf -> IO ClientEnv
+connectScim conf = do
+  -- honor TLS settings
+  manager <- HTTP.newManager HTTP.defaultManagerSettings
+  let base = BaseUrl Http (scimHost conf) (scimPort conf) (scimPath conf)
+  pure $ mkClientEnv manager base
+
 updateScimPeer :: BridgeConf -> [User] -> IO [StoredUser]
 updateScimPeer conf scims = do
-  let clientEnv = undefined conf
-      tok = undefined conf
-  ScimClient.postUser clientEnv (Just tok) `mapM` scims
+  -- TODO: get, then decide whether to post, put, or do nothing.
+  -- TODO: delete deletees.
+  clientEnv <- connectScim (scimTarget conf)
+  let tok = Just . scimToken . scimTarget $ conf
+  ScimClient.postUser clientEnv tok `mapM` scims
+
+parseCli :: IO BridgeConf
+parseCli = do
+  usage <- do
+    progName <- getProgName
+    let usage :: String -> ErrorCall
+        usage = ErrorCall . (<> help)
+        help =
+          cs . unlines . fmap cs $
+            [ "",
+              "",
+              "usage: " <> progName <> " <config.yaml>",
+              "see https://github.com/wireapp/ldap-scim-bridge for a sample config."
+            ]
+    pure usage
+
+  getArgs >>= \case
+    [file] -> do
+      content <- ByteString.readFile file `catch` \(SomeException err) -> throwIO . usage $ show err
+      either (throwIO . usage . show) pure $ Yaml.decodeEither' content
+    bad -> throwIO . usage $ "bad number of arguments: " <> show bad
 
 ----------------------------------------------------------------------
 
 main :: IO ()
 main = do
-  myconf :: BridgeConf <- ByteString.readFile "./sample-conf.yaml" >>= either (error . show) pure . Yaml.decodeEither'
-  searchLdapUser myconf "john" >>= print
-  listLdapUsers myconf >>= print
-  ldaps :: [SearchEntry] <- either (error . show) pure =<< listLdapUsers myconf
-  let mbScims :: [Either [MappingError] User]
-      mbScims = ldapToScim myconf <$> ldaps
-  scims :: [User] <- mapM (either (error . show) pure) mbScims
-  LByteString.putStrLn $ Aeson.encodePretty scims
+  myconf :: BridgeConf <-
+    parseCli
+  ldaps :: [SearchEntry] <-
+    either (throwIO . ErrorCall . show) pure =<< listLdapUsers (ldapSource myconf)
+  scims :: [User] <-
+    -- TODO: better error message (include input ldap object).
+    mapM (either (throwIO . ErrorCall . show) pure) (ldapToScim myconf <$> ldaps)
+  -- TODO: logging
+  -- LByteString.putStrLn $ Aeson.encodePretty scims
   updateScimPeer myconf scims >>= print
-
-{-
-
-getUser ::
-  HasScimClient tag =>
-  ClientEnv ->
-  Maybe (AuthData tag) ->
-  UserId tag ->
-  IO (StoredUser tag)
-getUser env tok = case users (scimClients env) tok of ((_ :<|> (r :<|> _)) :<|> (_ :<|> (_ :<|> _))) -> r
-
-postUser ::
-  HasScimClient tag =>
-  ClientEnv ->
-  Maybe (AuthData tag) ->
-  (User tag) ->
-  IO (StoredUser tag)
-postUser env tok = case users (scimClients env) tok of ((_ :<|> (_ :<|> r)) :<|> (_ :<|> (_ :<|> _))) -> r
-
-putUser ::
-  HasScimClient tag =>
-  ClientEnv ->
-  Maybe (AuthData tag) ->
-  UserId tag ->
-  (User tag) ->
-  IO (StoredUser tag)
-putUser env tok = case users (scimClients env) tok of ((_ :<|> (_ :<|> _)) :<|> (r :<|> (_ :<|> _))) -> r
-
--}

@@ -1,11 +1,18 @@
-tls: false
-host: "localhost"
-port: 389
-dn: "cn=admin,dc=nodomain"
-password: "geheim hoch drei"
-base: "ou=People,dc=nodomain"
-objectClass: "account"
-codec: "utf8"
+ldapSource:
+  tls: false
+  host: "localhost"
+  port: 389
+  dn: "cn=admin,dc=nodomain"
+  password: "geheim hoch drei"
+  base: "ou=People,dc=nodomain"
+  objectClass: "account"
+  codec: "utf8"
+scimTarget:
+  tls: false
+  host: "localhost"
+  port: 8088
+  path: "/"
+  token: "..."
 mapping:
   userName: "uidNumber"
   externalId: "uid"
