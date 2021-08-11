@@ -1,3 +1,4 @@
+logLevel: "Debug"
 ldapSource:
   tls: false
   host: "localhost"

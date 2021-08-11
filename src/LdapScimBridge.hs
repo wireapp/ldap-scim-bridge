@@ -1,48 +1,30 @@
 {-# LANGUAGE OverloadedStrings #-}
-{-# OPTIONS_GHC -Wno-unused-imports -Wno-missing-export-lists #-}
+{-# OPTIONS_GHC -Wno-orphans -Wno-missing-export-lists #-}
 
 module LdapScimBridge where
 
-import Control.Exception (ErrorCall (ErrorCall), bracket_, catch, throwIO)
-import Control.Monad (when)
+import Control.Exception (ErrorCall (ErrorCall), catch, throwIO)
 import qualified Data.Aeson as Aeson
 import qualified Data.Aeson.Encode.Pretty as Aeson
-import qualified Data.Bifunctor as Bifunctor
-import Data.ByteString.Char8 (ByteString)
 import qualified Data.ByteString.Char8 as ByteString
-import qualified Data.ByteString.Lazy.Char8 as LByteString
 import qualified Data.Foldable as Foldable
-import Data.Function (fix)
-import Data.List.NonEmpty
-import Data.Map (Map)
 import qualified Data.Map as Map
-import Data.Maybe (catMaybes)
 import Data.String.Conversions (cs)
 import qualified Data.String.Conversions as SC
-import Data.Text (Text)
 import qualified Data.Text.Encoding as Text
-import qualified Data.Text.IO as Text
 import qualified Data.Yaml as Yaml
 import Ldap.Client as Ldap
-import qualified Ldap.Client.Bind as Ldap
 import qualified Network.HTTP.Client as HTTP
-import Servant.API (Header, (:<|>) ((:<|>)), (:>))
-import Servant.API.ContentTypes (NoContent)
-import Servant.API.Generic (ToServant)
-import Servant.Client (BaseUrl (..), ClientEnv (..), ClientM, Scheme (..), client, mkClientEnv, runClientM)
-import Servant.Client.Generic (AsClientT, genericClientHoist)
+import Servant.Client (BaseUrl (..), ClientEnv (..), Scheme (..), mkClientEnv)
 import System.Environment (getProgName)
-import System.Exit (die)
-import qualified System.IO as IO
+import System.Logger (Level (..))
+import qualified System.Logger as Log
 import qualified Text.Email.Validate
-import qualified Web.Scim.Class.Auth as ScimClass
 import qualified Web.Scim.Class.User as ScimClass
 import qualified Web.Scim.Client as ScimClient
-import qualified Web.Scim.Schema.ListResponse as Scim
 import qualified Web.Scim.Schema.Schema as Scim
 import qualified Web.Scim.Schema.User as Scim
 import qualified Web.Scim.Schema.User.Email as Scim
-import qualified Web.Scim.Server as ScimServer
 import qualified Web.Scim.Server.Mock as ScimServer
 
 data LdapConf = LdapConf
@@ -117,9 +99,19 @@ instance Aeson.FromJSON ScimConf where
 data BridgeConf = BridgeConf
   { ldapSource :: LdapConf,
     scimTarget :: ScimConf,
-    mapping :: Mapping
+    mapping :: Mapping,
+    logLevel :: Level
   }
   deriving stock (Generic)
+
+instance Aeson.FromJSON Level where
+  parseJSON "Trace" = pure Trace
+  parseJSON "Debug" = pure Debug
+  parseJSON "Info" = pure Info
+  parseJSON "Warn" = pure Warn
+  parseJSON "Error" = pure Error
+  parseJSON "Fatal" = pure Fatal
+  parseJSON bad = fail $ "unknown Level: " <> show bad
 
 instance Aeson.FromJSON BridgeConf
 
@@ -215,20 +207,20 @@ emptyScimUser =
 
 ldapToScim ::
   forall scim.
-  scim ~ Either [MappingError] User =>
+  scim ~ Either [(SearchEntry, MappingError)] User =>
   BridgeConf ->
   SearchEntry ->
   scim
-ldapToScim conf (SearchEntry _ attrs) = Foldable.foldl' go (Right emptyScimUser) attrs
+ldapToScim conf entry@(SearchEntry _ attrs) = Foldable.foldl' go (Right emptyScimUser) attrs
   where
     go :: scim -> (Attr, [AttrValue]) -> scim
     go scimval (Attr key, vals) = case Map.lookup key (fromMapping $ mapping conf) of
       Nothing -> scimval
       Just (FieldMapping f) -> case (scimval, f (ldapCodec (ldapSource conf) <$> vals)) of
         (Right scimusr, Right f') -> Right (f' scimusr)
-        (Right _, Left err) -> Left [err]
+        (Right _, Left err) -> Left [(entry, err)]
         (Left errs, Right _) -> Left errs
-        (Left errs, Left err) -> Left (err : errs)
+        (Left errs, Left err) -> Left ((entry, err) : errs)
 
 connectScim :: ScimConf -> IO ClientEnv
 connectScim conf = do
@@ -237,13 +229,16 @@ connectScim conf = do
   let base = BaseUrl Http (scimHost conf) (scimPort conf) (scimPath conf)
   pure $ mkClientEnv manager base
 
-updateScimPeer :: BridgeConf -> [User] -> IO [StoredUser]
-updateScimPeer conf scims = do
+updateScimPeer :: Logger -> BridgeConf -> [User] -> IO ()
+updateScimPeer lgr conf scims = do
   -- TODO: get, then decide whether to post, put, or do nothing.
   -- TODO: delete deletees.
   clientEnv <- connectScim (scimTarget conf)
   let tok = Just . scimToken . scimTarget $ conf
-  ScimClient.postUser clientEnv tok `mapM` scims
+  forM_ scims $ \scim -> do
+    lgr Info $ "posting " <> show (Scim.externalId scim)
+    void (ScimClient.postUser clientEnv tok `mapM` scims) `catch` \e@(SomeException _) -> do
+      lgr Warn $ show e
 
 parseCli :: IO BridgeConf
 parseCli = do
@@ -266,17 +261,24 @@ parseCli = do
       either (throwIO . usage . show) pure $ Yaml.decodeEither' content
     bad -> throwIO . usage $ "bad number of arguments: " <> show bad
 
-----------------------------------------------------------------------
+type Logger = Level -> Text -> IO ()
+
+mkLogger :: Level -> IO Logger
+mkLogger lvl = do
+  lgr :: Log.Logger <- Log.new (Log.setLogLevel lvl Log.defSettings)
+  pure $ \msgLvl msgContent -> do
+    Log.log lgr msgLvl (Log.msg @Text $ show msgContent)
+    Log.flush lgr
 
 main :: IO ()
 main = do
   myconf :: BridgeConf <-
     parseCli
+  lgr :: Logger <-
+    mkLogger (logLevel myconf)
   ldaps :: [SearchEntry] <-
     either (throwIO . ErrorCall . show) pure =<< listLdapUsers (ldapSource myconf)
   scims :: [User] <-
-    -- TODO: better error message (include input ldap object).
     mapM (either (throwIO . ErrorCall . show) pure) (ldapToScim myconf <$> ldaps)
-  -- TODO: logging
-  -- LByteString.putStrLn $ Aeson.encodePretty scims
-  updateScimPeer myconf scims >>= print
+  lgr Debug . cs $ "Pulled the following scim users:\n" <> Aeson.encodePretty scims
+  updateScimPeer lgr myconf scims
