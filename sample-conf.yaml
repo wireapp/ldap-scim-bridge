@@ -1,0 +1,20 @@
+logLevel: "Debug"
+ldapSource:
+  tls: false
+  host: "localhost"
+  port: 389
+  dn: "cn=admin,dc=nodomain"
+  password: "geheim hoch drei"
+  base: "ou=People,dc=nodomain"
+  objectClass: "account"
+  codec: "utf8"
+scimTarget:
+  tls: false
+  host: "localhost"
+  port: 8088
+  path: "/scim/v2"
+  token: "Bearer scim-test-token/team=471a5f6e-86fa-4850-b6e0-9758259afcdf/code=b873fbf9-e3b5-487b-8098-ab1f47fed7b0"
+mapping:
+  userName: "uidNumber"
+  externalId: "uid"
+  email: "email"

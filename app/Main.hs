@@ -1,6 +1,3 @@
 module Main (main) where
 
-import LdapScimBridge (someFunc)
-
-main :: IO ()
-main = someFunc
+import LdapScimBridge (main)

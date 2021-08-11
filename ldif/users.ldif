@@ -1,0 +1,4 @@
+dn: ou=People,dc=nodomain
+objectClass: organizationalUnit
+ou: People
+
