@@ -242,23 +242,24 @@ updateScimPeer lgr conf scims = do
   forM_ scims $ \scim -> do
     eid <- maybe (error "impossible") pure $ Scim.externalId scim
     let fltr = Just $ filterBy "externalId" eid
-    mbold :: Maybe StoredUser <-
+    mbold :: [StoredUser] <-
       ScimClient.getUsers @ScimServer.Mock clientEnv tok fltr
         <&> Scim.resources
-        <&> listToMaybe
     case mbold of
-      Just old ->
+      [old] ->
         if ScimCommon.value (Scim.thing old) == scim
           then do
             lgr Info $ "unchanged: " <> show (Scim.externalId scim)
           else do
             lgr Info $ "update: " <> show (Scim.externalId scim)
-            void (ScimClient.postUser clientEnv tok `mapM` scims) `catch` \e@(SomeException _) -> do
-              lgr Warn $ show e
-      Nothing -> do
+            void (ScimClient.postUser clientEnv tok `mapM` scims)
+              `catch` \e@(SomeException _) -> lgr Warn $ show e
+      [] -> do
         lgr Info $ "new user: " <> show (Scim.externalId scim)
-        void (ScimClient.postUser clientEnv tok `mapM` scims) `catch` \e@(SomeException _) -> do
-          lgr Warn $ show e
+        void (ScimClient.postUser clientEnv tok `mapM` scims)
+          `catch` \e@(SomeException _) -> lgr Warn $ show e
+      (_ : _ : _) -> do
+        error "impossible" -- externalId must be unique in the scope of the scim auth token.
   where
     filterBy :: Text -> Text -> ScimFilter.Filter
     filterBy name value =
