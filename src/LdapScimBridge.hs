@@ -22,6 +22,10 @@ import qualified System.Logger as Log
 import qualified Text.Email.Validate
 import qualified Web.Scim.Class.User as ScimClass
 import qualified Web.Scim.Client as ScimClient
+import qualified Web.Scim.Filter as ScimFilter
+import qualified Web.Scim.Schema.Common as ScimCommon
+import qualified Web.Scim.Schema.ListResponse as Scim
+import qualified Web.Scim.Schema.Meta as Scim
 import qualified Web.Scim.Schema.Schema as Scim
 import qualified Web.Scim.Schema.User as Scim
 import qualified Web.Scim.Schema.User.Email as Scim
@@ -201,9 +205,10 @@ type StoredUser = ScimClass.StoredUser ScimServer.Mock
 -- mapping parser would have failed.
 emptyScimUser :: User
 emptyScimUser =
-  Scim.empty schemas (error "undefined") Scim.NoUserExtra
-  where
-    schemas = [Scim.User20]
+  Scim.empty scimSchemas (error "undefined") Scim.NoUserExtra
+
+scimSchemas :: [Scim.Schema]
+scimSchemas = [Scim.User20]
 
 ldapToScim ::
   forall scim.
@@ -231,14 +236,37 @@ connectScim conf = do
 
 updateScimPeer :: Logger -> BridgeConf -> [User] -> IO ()
 updateScimPeer lgr conf scims = do
-  -- TODO: get, then decide whether to post, put, or do nothing.
   -- TODO: delete deletees.
   clientEnv <- connectScim (scimTarget conf)
   let tok = Just . scimToken . scimTarget $ conf
   forM_ scims $ \scim -> do
-    lgr Info $ "posting " <> show (Scim.externalId scim)
-    void (ScimClient.postUser clientEnv tok `mapM` scims) `catch` \e@(SomeException _) -> do
-      lgr Warn $ show e
+    eid <- maybe (error "impossible") pure $ Scim.externalId scim
+    let fltr = Just $ filterBy "externalId" eid
+    mbold :: [StoredUser] <-
+      ScimClient.getUsers @ScimServer.Mock clientEnv tok fltr
+        <&> Scim.resources
+    case mbold of
+      [old] ->
+        if ScimCommon.value (Scim.thing old) == scim
+          then do
+            lgr Info $ "unchanged: " <> show (Scim.externalId scim)
+          else do
+            lgr Info $ "update: " <> show (Scim.externalId scim)
+            void (ScimClient.postUser clientEnv tok `mapM` scims)
+              `catch` \e@(SomeException _) -> lgr Warn $ show e
+      [] -> do
+        lgr Info $ "new user: " <> show (Scim.externalId scim)
+        void (ScimClient.postUser clientEnv tok `mapM` scims)
+          `catch` \e@(SomeException _) -> lgr Warn $ show e
+      (_ : _ : _) -> do
+        error "impossible" -- externalId must be unique in the scope of the scim auth token.
+  where
+    filterBy :: Text -> Text -> ScimFilter.Filter
+    filterBy name value =
+      ScimFilter.FilterAttrCompare
+        (ScimFilter.topLevelAttrPath name)
+        ScimFilter.OpEq
+        (ScimFilter.ValString value)
 
 parseCli :: IO BridgeConf
 parseCli = do
