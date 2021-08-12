@@ -12,7 +12,7 @@ ldapSource:
   deleteOnAttribute:  # optional, related to `delete-from-directory`.
     key: "deleted"
     value: "true"
-  deleteFromFirectory:  # optional; ok to use together with `delete-on-attribute` if you use both.
+  deleteFromDirectory:  # optional; ok to use together with `delete-on-attribute` if you use both.
     base: "ou=DeletedPeople,dc=nodomain"
     objectClass: "account"
 scimTarget:

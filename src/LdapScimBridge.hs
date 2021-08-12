@@ -123,7 +123,7 @@ data ScimConf = ScimConf
     scimPath :: String,
     scimToken :: Text
   }
-  deriving stock (Generic)
+  deriving stock (Eq, Show, Generic)
 
 instance Aeson.FromJSON ScimConf where
   parseJSON = Aeson.withObject "ScimConf" $ \obj -> do
@@ -391,8 +391,6 @@ mkLogger lvl = do
 
 main :: IO ()
 main = do
-  myconf :: BridgeConf <-
-    parseCli
-  lgr :: Logger <-
-    mkLogger (logLevel myconf)
+  myconf :: BridgeConf <- parseCli
+  lgr :: Logger <- mkLogger (logLevel myconf)
   updateScimPeer lgr myconf
