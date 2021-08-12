@@ -20,6 +20,7 @@ import System.Environment (getProgName)
 import System.Logger (Level (..))
 import qualified System.Logger as Log
 import qualified Text.Email.Validate
+import Web.Scim.Class.Auth (AuthData)
 import qualified Web.Scim.Class.User as ScimClass
 import qualified Web.Scim.Client as ScimClient
 import qualified Web.Scim.Filter as ScimFilter
@@ -39,13 +40,30 @@ data LdapConf = LdapConf
     -- | `$ slapcat | grep ^modifiersName`, eg. @Dn "cn=admin,dc=nodomain"@.
     ldapDn :: Dn,
     ldapPassword :: Password,
-    -- | `$ slapcat | grep ^dn`, eg. @Dn "dc=nodomain"@.
-    ldapBase :: Dn,
-    -- | eg. @Attr "objectClass" := "account"@.
-    ldapFltr :: Filter,
+    ldapSearch :: LdapSearch,
     -- | anything from "Data.Text.Encoding".
-    ldapCodec :: ByteString -> Text
+    ldapCodec :: Codec,
+    ldapDeleteOnAttribute :: Maybe LdapFilterAttr,
+    ldapDeleteFromDirectory :: Maybe LdapSearch
   }
+  deriving stock (Show)
+
+data LdapFilterAttr = LdapFilterAttr
+  { key :: Text,
+    value :: Text
+  }
+  deriving stock (Eq, Show, Generic)
+
+data LdapSearch = LdapSearch
+  { -- | `$ slapcat | grep ^dn`, eg. @Dn "dc=nodomain"@.
+    ldapSearchBase :: Dn,
+    -- | eg. @"account"@
+    ldapSearchObjectClass :: Text
+  }
+  deriving stock (Eq, Show)
+
+data Codec = Utf8 | Latin1
+  deriving stock (Eq, Show)
 
 instance Aeson.FromJSON LdapConf where
   parseJSON = Aeson.withObject "LdapConf" $ \obj -> do
@@ -54,9 +72,10 @@ instance Aeson.FromJSON LdapConf where
     fport :: Int <- obj Aeson..: "port"
     fdn :: Text <- obj Aeson..: "dn"
     fpassword :: String <- obj Aeson..: "password"
-    fbase :: Text <- obj Aeson..: "base"
-    fobjectClass :: String <- obj Aeson..: "objectClass"
+    fsearch :: LdapSearch <- obj Aeson..: "search"
     fcodec :: Text <- obj Aeson..: "codec"
+    fdeleteOnAttribute :: Maybe LdapFilterAttr <- obj Aeson..:? "deleteOnAttribute"
+    fdeleteFromDirectory :: Maybe LdapSearch <- obj Aeson..:? "deleteFromDirectory"
 
     let vhost :: Host
         vhost = case ftls of
@@ -66,9 +85,9 @@ instance Aeson.FromJSON LdapConf where
         vport :: PortNumber
         vport = fromIntegral fport
 
-    vcodec :: (ByteString -> Text) <- case fcodec of
-      "utf8" -> pure Text.decodeUtf8
-      "latin1" -> pure Text.decodeLatin1
+    vcodec <- case fcodec of
+      "utf8" -> pure Utf8
+      "latin1" -> pure Latin1
       bad -> fail $ "unsupported codec: " <> show bad
 
     pure $
@@ -77,10 +96,23 @@ instance Aeson.FromJSON LdapConf where
           ldapPort = vport,
           ldapDn = Dn fdn,
           ldapPassword = Password $ ByteString.pack fpassword,
-          ldapBase = Dn fbase,
-          ldapFltr = Attr "objectClass" := ByteString.pack fobjectClass,
-          ldapCodec = vcodec
+          ldapSearch = fsearch,
+          ldapCodec = vcodec,
+          ldapDeleteOnAttribute = fdeleteOnAttribute,
+          ldapDeleteFromDirectory = fdeleteFromDirectory
         }
+
+instance Aeson.FromJSON LdapFilterAttr where
+  parseJSON = Aeson.withObject "LdapFilterAttr" $ \obj -> do
+    LdapFilterAttr
+      <$> obj Aeson..: "key"
+      <*> obj Aeson..: "value"
+
+instance Aeson.FromJSON LdapSearch where
+  parseJSON = Aeson.withObject "LdapSearch" $ \obj -> do
+    fbase :: Text <- obj Aeson..: "base"
+    fobjectClass :: Text <- obj Aeson..: "objectClass"
+    pure $ LdapSearch (Dn fbase) fobjectClass
 
 data ScimConf = ScimConf
   { scimTls :: Bool,
@@ -182,20 +214,14 @@ instance Aeson.FromJSON Mapping where
 
 type LdapResult a = IO (Either LdapError a)
 
-searchLdapUser :: LdapConf -> Text -> LdapResult [SearchEntry]
-searchLdapUser conf uid = Ldap.with (ldapHost conf) (ldapPort conf) $ \l -> do
-  Ldap.bind l (ldapDn conf) (ldapPassword conf)
-  Ldap.search
-    l
-    (ldapBase conf)
-    (typesOnly True)
-    (And (ldapFltr conf :| [Attr "uid" := Text.encodeUtf8 uid]))
-    []
+ldapObjectClassFilter :: Text -> Filter
+ldapObjectClassFilter = (Attr "objectClass" :=) . cs
 
-listLdapUsers :: LdapConf -> LdapResult [SearchEntry]
-listLdapUsers conf = Ldap.with (ldapHost conf) (ldapPort conf) $ \l -> do
+listLdapUsers :: LdapConf -> LdapSearch -> LdapResult [SearchEntry]
+listLdapUsers conf searchConf = Ldap.with (ldapHost conf) (ldapPort conf) $ \l -> do
   Ldap.bind l (ldapDn conf) (ldapPassword conf)
-  Ldap.search l (ldapBase conf) mempty (ldapFltr conf) mempty
+  let fltr = ldapObjectClassFilter . ldapSearchObjectClass $ searchConf
+  Ldap.search l (ldapSearchBase searchConf) mempty fltr mempty
 
 type User = Scim.User ScimServer.Mock
 
@@ -211,17 +237,21 @@ scimSchemas :: [Scim.Schema]
 scimSchemas = [Scim.User20]
 
 ldapToScim ::
-  forall scim.
-  scim ~ Either [(SearchEntry, MappingError)] User =>
+  forall m.
+  m ~ Either [(SearchEntry, MappingError)] =>
   BridgeConf ->
   SearchEntry ->
-  scim
-ldapToScim conf entry@(SearchEntry _ attrs) = Foldable.foldl' go (Right emptyScimUser) attrs
+  m (SearchEntry, User)
+ldapToScim conf entry@(SearchEntry _ attrs) = (entry,) <$> Foldable.foldl' go (Right emptyScimUser) attrs
   where
-    go :: scim -> (Attr, [AttrValue]) -> scim
+    codec = case ldapCodec (ldapSource conf) of
+      Utf8 -> Text.decodeUtf8
+      Latin1 -> Text.decodeLatin1
+
+    go :: m User -> (Attr, [AttrValue]) -> m User
     go scimval (Attr key, vals) = case Map.lookup key (fromMapping $ mapping conf) of
       Nothing -> scimval
-      Just (FieldMapping f) -> case (scimval, f (ldapCodec (ldapSource conf) <$> vals)) of
+      Just (FieldMapping f) -> case (scimval, f (codec <$> vals)) of
         (Right scimusr, Right f') -> Right (f' scimusr)
         (Right _, Left err) -> Left [(entry, err)]
         (Left errs, Right _) -> Left errs
@@ -234,32 +264,51 @@ connectScim conf = do
   let base = BaseUrl Http (scimHost conf) (scimPort conf) (scimPath conf)
   pure $ mkClientEnv manager base
 
-updateScimPeer :: Logger -> BridgeConf -> [User] -> IO ()
-updateScimPeer lgr conf scims = do
-  -- TODO: delete deletees.
+isDeletee :: LdapConf -> SearchEntry -> Bool
+isDeletee conf = case ldapDeleteOnAttribute conf of
+  Nothing -> const False
+  Just (LdapFilterAttr key value) -> _
+
+updateScimPeer :: Logger -> BridgeConf -> IO ()
+updateScimPeer lgr conf = do
   clientEnv <- connectScim (scimTarget conf)
   let tok = Just . scimToken . scimTarget $ conf
-  forM_ scims $ \scim -> do
-    eid <- maybe (error "impossible") pure $ Scim.externalId scim
-    let fltr = Just $ filterBy "externalId" eid
-    mbold :: [StoredUser] <-
-      ScimClient.getUsers @ScimServer.Mock clientEnv tok fltr
-        <&> Scim.resources
-    case mbold of
-      [old] ->
-        if ScimCommon.value (Scim.thing old) == scim
-          then do
-            lgr Info $ "unchanged: " <> show (Scim.externalId scim)
-          else do
-            lgr Info $ "update: " <> show (Scim.externalId scim)
-            void (ScimClient.postUser clientEnv tok `mapM` scims)
-              `catch` \e@(SomeException _) -> lgr Error $ show e
-      [] -> do
-        lgr Info $ "new user: " <> show (Scim.externalId scim)
-        void (ScimClient.postUser clientEnv tok `mapM` scims)
-          `catch` \e@(SomeException _) -> lgr Error $ show e
-      (_ : _ : _) -> do
-        error "impossible" -- externalId must be unique in the scope of the scim auth token.
+  ldaps :: [SearchEntry] <-
+    either (throwIO . ErrorCall . show) pure =<< listLdapUsers (ldapSource conf) (ldapSearch (ldapSource conf))
+  do
+    -- put, post
+    let ldapKeepees = filter (not . isDeletee (ldapSource conf)) ldaps
+    scims :: [(SearchEntry, User)] <-
+      mapM (either (throwIO . ErrorCall . show) pure) (ldapToScim conf <$> ldapKeepees)
+    lgr Debug $ "Pulled the following ldap users for post/put:\n" <> show (fst <$> scims)
+    lgr Debug . cs $ "Translated to scim:\n" <> Aeson.encodePretty (snd <$> scims)
+    updateScimPeerPostPut lgr clientEnv tok (snd <$> scims)
+  do
+    -- delete
+    let ldapDeleteesAttr = filter (isDeletee (ldapSource conf)) ldaps
+    ldapDeleteesDirectory :: [SearchEntry] <- case (ldapDeleteFromDirectory (ldapSource conf)) of
+      Just (searchConf :: LdapSearch) ->
+        either (throwIO . ErrorCall . show) pure =<< listLdapUsers (ldapSource conf) searchConf
+      Nothing ->
+        pure mempty
+
+    scims :: [(SearchEntry, User)] <-
+      mapM (either (throwIO . ErrorCall . show) pure) (ldapToScim conf <$> (ldapDeleteesAttr <> ldapDeleteesDirectory))
+    lgr Debug $ "Pulled the following ldap users for delete:\n" <> show (fst <$> scims)
+    lgr Debug . cs $ "Translated to scim:\n" <> Aeson.encodePretty (snd <$> scims)
+    updateScimPeerDelete lgr clientEnv tok (snd <$> scims)
+
+lookupScimByExternalId :: ClientEnv -> Maybe Text -> Scim.User tag -> IO (Maybe StoredUser)
+lookupScimByExternalId clientEnv tok scim = do
+  eid <- maybe (error "impossible") pure $ Scim.externalId scim
+  let fltr = Just $ filterBy "externalId" eid
+  mbold :: [StoredUser] <-
+    ScimClient.getUsers @ScimServer.Mock clientEnv tok fltr
+      <&> Scim.resources
+  case mbold of
+    [old] -> pure $ Just old
+    [] -> pure Nothing
+    (_ : _ : _) -> error "impossible" -- externalId must be unique in the scope of the scim auth token.
   where
     filterBy :: Text -> Text -> ScimFilter.Filter
     filterBy name value =
@@ -267,6 +316,41 @@ updateScimPeer lgr conf scims = do
         (ScimFilter.topLevelAttrPath name)
         ScimFilter.OpEq
         (ScimFilter.ValString value)
+
+updateScimPeerPostPut ::
+  Logger ->
+  ClientEnv ->
+  Maybe (AuthData ScimServer.Mock) ->
+  [User] ->
+  IO ()
+updateScimPeerPostPut lgr clientEnv tok = mapM_ $ \scim -> do
+  lookupScimByExternalId clientEnv tok scim >>= \case
+    Just old ->
+      if ScimCommon.value (Scim.thing old) == scim
+        then do
+          lgr Info $ "unchanged: " <> show (Scim.externalId scim)
+        else do
+          lgr Info $ "update: " <> show (Scim.externalId scim)
+          void (ScimClient.postUser @ScimServer.Mock clientEnv tok scim)
+            `catch` \e@(SomeException _) -> lgr Error $ show e
+    Nothing -> do
+      lgr Info $ "new user: " <> show (Scim.externalId scim)
+      void (ScimClient.postUser clientEnv tok scim)
+        `catch` \e@(SomeException _) -> lgr Error $ show e
+
+updateScimPeerDelete ::
+  Logger ->
+  ClientEnv ->
+  Maybe (AuthData ScimServer.Mock) ->
+  [User] ->
+  IO ()
+updateScimPeerDelete lgr clientEnv tok = mapM_ $ \scim -> do
+  lookupScimByExternalId clientEnv tok scim >>= \case
+    Just old -> do
+      void (ScimClient.deleteUser @ScimServer.Mock clientEnv tok (ScimCommon.id (Scim.thing old)))
+        `catch` \e@(SomeException _) -> lgr Error $ show e
+    Nothing -> do
+      pure ()
 
 parseCli :: IO BridgeConf
 parseCli = do
@@ -304,9 +388,4 @@ main = do
     parseCli
   lgr :: Logger <-
     mkLogger (logLevel myconf)
-  ldaps :: [SearchEntry] <-
-    either (throwIO . ErrorCall . show) pure =<< listLdapUsers (ldapSource myconf)
-  scims :: [User] <-
-    mapM (either (throwIO . ErrorCall . show) pure) (ldapToScim myconf <$> ldaps)
-  lgr Debug . cs $ "Pulled the following scim users:\n" <> Aeson.encodePretty scims
-  updateScimPeer lgr myconf scims
+  updateScimPeer lgr myconf
