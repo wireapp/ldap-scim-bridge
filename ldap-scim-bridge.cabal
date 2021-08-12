@@ -40,6 +40,7 @@ common common-options
                      , http-types >=0.12.3 && <0.13
                      , string-conversions >=0.4.0.1 && <0.5
                      , http-client >=0.7.8 && <0.8
+                     , http-client-tls >=0.3.5 && <0.4
                      , tinylog >=0.15 && <0.16
 
   mixins:              base hiding (Prelude)

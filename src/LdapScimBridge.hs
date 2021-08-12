@@ -8,6 +8,7 @@ import qualified Data.Aeson as Aeson
 import qualified Data.Aeson.Encode.Pretty as Aeson
 import qualified Data.ByteString.Char8 as ByteString
 import qualified Data.Foldable as Foldable
+import qualified Data.List
 import qualified Data.Map as Map
 import Data.String.Conversions (cs)
 import qualified Data.String.Conversions as SC
@@ -15,6 +16,7 @@ import qualified Data.Text.Encoding as Text
 import qualified Data.Yaml as Yaml
 import Ldap.Client as Ldap
 import qualified Network.HTTP.Client as HTTP
+import qualified Network.HTTP.Client.TLS as HTTP
 import Servant.Client (BaseUrl (..), ClientEnv (..), Scheme (..), mkClientEnv)
 import System.Environment (getProgName)
 import System.Logger (Level (..))
@@ -259,15 +261,20 @@ ldapToScim conf entry@(SearchEntry _ attrs) = (entry,) <$> Foldable.foldl' go (R
 
 connectScim :: ScimConf -> IO ClientEnv
 connectScim conf = do
-  -- honor TLS settings
-  manager <- HTTP.newManager HTTP.defaultManagerSettings
+  let settings =
+        if scimTls conf
+          then HTTP.tlsManagerSettings
+          else HTTP.defaultManagerSettings
+  manager <- HTTP.newManager settings
   let base = BaseUrl Http (scimHost conf) (scimPort conf) (scimPath conf)
   pure $ mkClientEnv manager base
 
 isDeletee :: LdapConf -> SearchEntry -> Bool
 isDeletee conf = case ldapDeleteOnAttribute conf of
   Nothing -> const False
-  Just (LdapFilterAttr key value) -> _
+  Just (LdapFilterAttr key value) ->
+    \(SearchEntry _ attrs) ->
+      maybe False (cs value `elem`) (Data.List.lookup (Attr key) attrs)
 
 updateScimPeer :: Logger -> BridgeConf -> IO ()
 updateScimPeer lgr conf = do
