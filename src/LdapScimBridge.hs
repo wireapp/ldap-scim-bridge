@@ -253,11 +253,11 @@ updateScimPeer lgr conf scims = do
           else do
             lgr Info $ "update: " <> show (Scim.externalId scim)
             void (ScimClient.postUser clientEnv tok `mapM` scims)
-              `catch` \e@(SomeException _) -> lgr Warn $ show e
+              `catch` \e@(SomeException _) -> lgr Error $ show e
       [] -> do
         lgr Info $ "new user: " <> show (Scim.externalId scim)
         void (ScimClient.postUser clientEnv tok `mapM` scims)
-          `catch` \e@(SomeException _) -> lgr Warn $ show e
+          `catch` \e@(SomeException _) -> lgr Error $ show e
       (_ : _ : _) -> do
         error "impossible" -- externalId must be unique in the scope of the scim auth token.
   where
