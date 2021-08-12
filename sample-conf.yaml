@@ -1,4 +1,4 @@
-logLevel: "Debug"
+logLevel: "Debug"  # one of Trace,Debug,Info,Warn,Error,Fatal; `Fatal` is least noisy, `Trace` most.
 ldapSource:
   tls: false
   host: "localhost"
