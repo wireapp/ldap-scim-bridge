@@ -23,6 +23,8 @@ import System.Logger (Level (..))
 import qualified System.Logger as Log
 import qualified Text.Email.Validate
 import Web.Scim.Class.Auth (AuthData)
+import qualified Web.Scim.Class.Auth as AuthClass
+import qualified Web.Scim.Class.Group as GroupClass
 import qualified Web.Scim.Class.User as ScimClass
 import qualified Web.Scim.Client as ScimClient
 import qualified Web.Scim.Filter as ScimFilter
@@ -32,7 +34,6 @@ import qualified Web.Scim.Schema.Meta as Scim
 import qualified Web.Scim.Schema.Schema as Scim
 import qualified Web.Scim.Schema.User as Scim
 import qualified Web.Scim.Schema.User.Email as Scim
-import qualified Web.Scim.Server.Mock as ScimServer
 
 data LdapConf = LdapConf
   { -- | eg. @Ldap.Tls (host conf) Ldap.defaultTlsSettings@
@@ -164,10 +165,24 @@ newtype FieldMapping
       ( [Text] ->
         Either
           MappingError
-          ( Scim.User ScimServer.Mock ->
-            Scim.User ScimServer.Mock
+          ( Scim.User ScimTag ->
+            Scim.User ScimTag
           )
       )
+
+data ScimTag
+
+instance Scim.UserTypes ScimTag where
+  type UserId ScimTag = Text
+  type UserExtra ScimTag = Scim.NoUserExtra
+  supportedSchemas = [Scim.User20]
+
+instance GroupClass.GroupTypes ScimTag where
+  type GroupId ScimTag = Text
+
+instance AuthClass.AuthTypes ScimTag where
+  type AuthData ScimTag = Text
+  type AuthInfo ScimTag = ()
 
 -- | Map attribute keys to functions from attribute values to changes to scim records.  We'll
 -- start off with an empty scim record, and change it based on attributes we find that are
@@ -225,9 +240,9 @@ listLdapUsers conf searchConf = Ldap.with (ldapHost conf) (ldapPort conf) $ \l -
   let fltr = ldapObjectClassFilter . ldapSearchObjectClass $ searchConf
   Ldap.search l (ldapSearchBase searchConf) mempty fltr mempty
 
-type User = Scim.User ScimServer.Mock
+type User = Scim.User ScimTag
 
-type StoredUser = ScimClass.StoredUser ScimServer.Mock
+type StoredUser = ScimClass.StoredUser ScimTag
 
 -- | the 'undefined' is ok, the mapping is guaranteed to contain a filler for this, or the
 -- mapping parser would have failed.
@@ -310,7 +325,7 @@ lookupScimByExternalId clientEnv tok scim = do
   eid <- maybe (error "impossible") pure $ Scim.externalId scim
   let fltr = Just $ filterBy "externalId" eid
   mbold :: [StoredUser] <-
-    ScimClient.getUsers @ScimServer.Mock clientEnv tok fltr
+    ScimClient.getUsers @ScimTag clientEnv tok fltr
       <&> Scim.resources
   case mbold of
     [old] -> pure $ Just old
@@ -327,12 +342,12 @@ lookupScimByExternalId clientEnv tok scim = do
 updateScimPeerPostPut ::
   Logger ->
   ClientEnv ->
-  Maybe (AuthData ScimServer.Mock) ->
+  Maybe (AuthData ScimTag) ->
   [User] ->
   IO ()
 updateScimPeerPostPut lgr clientEnv tok = mapM_ $ \scim -> do
   -- TODO: don't truncate logs!!
-  lookupScimByExternalId clientEnv tok scim >>= \case  -- TODO: lookupScimByExternalId cannot parse its own response.  this is because 'Mock' /= 'Wire'.
+  lookupScimByExternalId clientEnv tok scim >>= \case
     Just old ->
       if ScimCommon.value (Scim.thing old) == scim
         then do
@@ -349,13 +364,13 @@ updateScimPeerPostPut lgr clientEnv tok = mapM_ $ \scim -> do
 updateScimPeerDelete ::
   Logger ->
   ClientEnv ->
-  Maybe (AuthData ScimServer.Mock) ->
+  Maybe (AuthData ScimTag) ->
   [User] ->
   IO ()
 updateScimPeerDelete lgr clientEnv tok = mapM_ $ \scim -> do
   lookupScimByExternalId clientEnv tok scim >>= \case
     Just old -> do
-      void (ScimClient.deleteUser @ScimServer.Mock clientEnv tok (ScimCommon.id (Scim.thing old)))
+      void (ScimClient.deleteUser @ScimTag clientEnv tok (ScimCommon.id (Scim.thing old)))
         `catch` \e@(SomeException _) -> lgr Error $ show e
     Nothing -> do
       pure ()
