@@ -347,17 +347,29 @@ updateScimPeerPostPut ::
   IO ()
 updateScimPeerPostPut lgr clientEnv tok = mapM_ $ \scim -> do
   -- TODO: don't truncate logs!!
+  case Scim.externalId scim of
+    Nothing -> lgr Error $ "scim user with 'externalId' field: " <> show scim
+    Just eid -> updateScimPeerPostPutStep lgr clientEnv tok scim eid
+
+updateScimPeerPostPutStep ::
+  Logger ->
+  ClientEnv ->
+  Maybe Text ->
+  Scim.User ScimTag ->
+  Text ->
+  IO ()
+updateScimPeerPostPutStep lgr clientEnv tok scim eid = do
   lookupScimByExternalId clientEnv tok scim >>= \case
     Just old ->
       if ScimCommon.value (Scim.thing old) == scim
         then do
-          lgr Info $ "unchanged: " <> show (Scim.externalId scim)
+          lgr Info $ "unchanged: " <> show eid
         else do
-          lgr Info $ "update: " <> show (Scim.externalId scim)
-          void (ScimClient.putUser @ScimServer.Mock clientEnv tok (error "externalId or something") scim)
+          lgr Info $ "update: " <> show eid
+          void (ScimClient.putUser @ScimTag clientEnv tok eid scim)
             `catch` \e@(SomeException _) -> lgr Error $ show e
     Nothing -> do
-      lgr Info $ "new user: " <> show (Scim.externalId scim)
+      lgr Info $ "new user: " <> show eid
       void (ScimClient.postUser clientEnv tok scim)
         `catch` \e@(SomeException _) -> lgr Error $ show e
 
