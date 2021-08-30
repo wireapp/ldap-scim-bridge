@@ -346,7 +346,6 @@ updateScimPeerPostPut ::
   [User] ->
   IO ()
 updateScimPeerPostPut lgr clientEnv tok = mapM_ $ \scim -> do
-  -- TODO: don't truncate logs!!
   case Scim.externalId scim of
     Nothing -> lgr Error $ "scim user with 'externalId' field: " <> show scim
     Just eid -> updateScimPeerPostPutStep lgr clientEnv tok scim eid
@@ -412,7 +411,10 @@ type Logger = Level -> Text -> IO ()
 
 mkLogger :: Level -> IO Logger
 mkLogger lvl = do
-  lgr :: Log.Logger <- Log.new (Log.setLogLevel lvl Log.defSettings)
+  lgr :: Log.Logger <-
+    Log.defSettings
+      & Log.setLogLevel lvl
+      & Log.new
   pure $ \msgLvl msgContent -> do
     Log.log lgr msgLvl (Log.msg @Text $ show msgContent)
     Log.flush lgr
