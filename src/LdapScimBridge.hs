@@ -331,14 +331,15 @@ updateScimPeerPostPut ::
   [User] ->
   IO ()
 updateScimPeerPostPut lgr clientEnv tok = mapM_ $ \scim -> do
-  lookupScimByExternalId clientEnv tok scim >>= \case
+  -- TODO: don't truncate logs!!
+  lookupScimByExternalId clientEnv tok scim >>= \case  -- TODO: lookupScimByExternalId cannot parse its own response.  this is because 'Mock' /= 'Wire'.
     Just old ->
       if ScimCommon.value (Scim.thing old) == scim
         then do
           lgr Info $ "unchanged: " <> show (Scim.externalId scim)
         else do
           lgr Info $ "update: " <> show (Scim.externalId scim)
-          void (ScimClient.postUser @ScimServer.Mock clientEnv tok scim)
+          void (ScimClient.putUser @ScimServer.Mock clientEnv tok (error "externalId or something") scim)
             `catch` \e@(SomeException _) -> lgr Error $ show e
     Nothing -> do
       lgr Info $ "new user: " <> show (Scim.externalId scim)
