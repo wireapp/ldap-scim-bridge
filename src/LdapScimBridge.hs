@@ -358,7 +358,7 @@ updateScimPeerPostPut ::
   IO ()
 updateScimPeerPostPut lgr clientEnv tok = mapM_ $ \scim -> do
   case Scim.externalId scim of
-    Nothing -> lgr Error $ "scim user with 'externalId' field: " <> show scim
+    Nothing -> lgr Error $ "scim user without 'externalId' field: " <> show scim
     Just eid -> updateScimPeerPostPutStep lgr clientEnv tok scim eid
 
 updateScimPeerPostPutStep ::
