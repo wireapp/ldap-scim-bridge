@@ -306,14 +306,17 @@ updateScimPeer lgr conf = do
     either (throwIO . ErrorCall . show) pure =<< listLdapUsers (ldapSource conf) (ldapSearch (ldapSource conf))
   do
     -- put, post
+    lgr Info "[post/put: started]"
     let ldapKeepees = filter (not . isDeletee (ldapSource conf)) ldaps
     scims :: [(SearchEntry, User)] <-
       mapM (either (throwIO . ErrorCall . show) pure) (ldapToScim conf <$> ldapKeepees)
     lgr Debug $ "Pulled the following ldap users for post/put:\n" <> show (fst <$> scims)
     lgr Debug . cs $ "Translated to scim:\n" <> Aeson.encodePretty (snd <$> scims)
     updateScimPeerPostPut lgr clientEnv tok (snd <$> scims)
+    lgr Info "[post/put: done]"
   do
     -- delete
+    lgr Info "[delete: started]"
     let ldapDeleteesAttr = filter (isDeletee (ldapSource conf)) ldaps
     ldapDeleteesDirectory :: [SearchEntry] <- case (ldapDeleteFromDirectory (ldapSource conf)) of
       Just (searchConf :: LdapSearch) ->
@@ -326,6 +329,7 @@ updateScimPeer lgr conf = do
     lgr Debug $ "Pulled the following ldap users for delete:\n" <> show (fst <$> scims)
     lgr Debug . cs $ "Translated to scim:\n" <> Aeson.encodePretty (snd <$> scims)
     updateScimPeerDelete lgr clientEnv tok (snd <$> scims)
+    lgr Info "[delete: done]"
 
 lookupScimByExternalId :: ClientEnv -> Maybe Text -> Scim.User tag -> IO (Maybe StoredUser)
 lookupScimByExternalId clientEnv tok scim = do
