@@ -193,7 +193,7 @@ instance AuthClass.AuthTypes ScimTag where
 -- start off with an empty scim record, and change it based on attributes we find that are
 -- listed in the mapping.  Mappigns can fail, eg. if there is more than one attribute value
 -- for the attribute mapping to externalId.
-newtype Mapping = Mapping {fromMapping :: Map Text FieldMapping}
+newtype Mapping = Mapping {fromMapping :: Map Text [FieldMapping]}
   deriving stock (Show)
 
 instance Aeson.FromJSON Mapping where
@@ -202,7 +202,12 @@ instance Aeson.FromJSON Mapping where
     fexternalId <- obj Aeson..: "externalId"
     mfemail <- obj Aeson..:? "email"
 
-    pure . Mapping . Map.fromList . catMaybes $
+    let listToMap :: [(Text, a)] -> Map Text [a]
+        listToMap = foldl' go mempty
+          where
+            go mp (k, b) = Map.alter (Just . maybe [b] (b :)) k mp
+
+    pure . Mapping . listToMap . catMaybes $
       [ Just (fuserName, mapUserName fuserName),
         Just (fexternalId, mapExternalId fexternalId),
         (\femail -> (femail, mapEmail femail)) <$> mfemail
@@ -275,11 +280,14 @@ ldapToScim conf entry@(SearchEntry _ attrs) = (entry,) <$> Foldable.foldl' go (R
     go :: m User -> (Attr, [AttrValue]) -> m User
     go scimval (Attr key, vals) = case Map.lookup key (fromMapping $ mapping conf) of
       Nothing -> scimval
-      Just (FieldMapping _ f) -> case (scimval, f (codec <$> vals)) of
-        (Right scimusr, Right f') -> Right (f' scimusr)
-        (Right _, Left err) -> Left [(entry, err)]
-        (Left errs, Right _) -> Left errs
-        (Left errs, Left err) -> Left ((entry, err) : errs)
+      Just fieldMappings -> foldl' (go' vals) scimval fieldMappings
+
+    go' :: [ByteString] -> m User -> FieldMapping -> m User
+    go' vals scimval (FieldMapping _ f) = case (scimval, f (codec <$> vals)) of
+      (Right scimusr, Right f') -> Right (f' scimusr)
+      (Right _, Left err) -> Left [(entry, err)]
+      (Left errs, Right _) -> Left errs
+      (Left errs, Left err) -> Left ((entry, err) : errs)
 
 connectScim :: ScimConf -> IO ClientEnv
 connectScim conf = do
