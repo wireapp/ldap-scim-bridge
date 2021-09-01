@@ -14,6 +14,7 @@ import Data.String.Conversions (cs)
 import qualified Data.String.Conversions as SC
 import qualified Data.Text.Encoding as Text
 import qualified Data.Yaml as Yaml
+import qualified GHC.Show
 import Ldap.Client as Ldap
 import qualified Network.HTTP.Client as HTTP
 import qualified Network.HTTP.Client.TLS as HTTP
@@ -160,15 +161,19 @@ data MappingError
   | CouldNotParseEmail Text String
   deriving stock (Eq, Show)
 
-newtype FieldMapping
-  = FieldMapping
-      ( [Text] ->
-        Either
-          MappingError
-          ( Scim.User ScimTag ->
-            Scim.User ScimTag
-          )
-      )
+data FieldMapping = FieldMapping
+  { fieldMappingLabel :: Text,
+    fieldMappingFun ::
+      [Text] ->
+      Either
+        MappingError
+        ( Scim.User ScimTag ->
+          Scim.User ScimTag
+        )
+  }
+
+instance Show FieldMapping where
+  show = show . fieldMappingLabel
 
 data ScimTag
 
@@ -189,6 +194,7 @@ instance AuthClass.AuthTypes ScimTag where
 -- listed in the mapping.  Mappigns can fail, eg. if there is more than one attribute value
 -- for the attribute mapping to externalId.
 newtype Mapping = Mapping {fromMapping :: Map Text FieldMapping}
+  deriving stock (Show)
 
 instance Aeson.FromJSON Mapping where
   parseJSON = Aeson.withObject "Mapping" $ \obj -> do
@@ -202,17 +208,18 @@ instance Aeson.FromJSON Mapping where
         (\femail -> (femail, mapEmail femail)) <$> mfemail
       ]
     where
-      mapUserName ldapFieldName = FieldMapping $
+      mapUserName :: Text -> FieldMapping
+      mapUserName ldapFieldName = FieldMapping "userName" $
         \case
           [val] -> Right $ \usr -> usr {Scim.userName = val}
           bad -> Left $ WrongNumberOfAttrValues ldapFieldName "1" (Prelude.length bad)
 
-      mapExternalId ldapFieldName = FieldMapping $
+      mapExternalId ldapFieldName = FieldMapping "externalId" $
         \case
           [val] -> Right $ \usr -> usr {Scim.externalId = Just val}
           bad -> Left $ WrongNumberOfAttrValues ldapFieldName "1" (Prelude.length bad)
 
-      mapEmail ldapFieldName = FieldMapping $
+      mapEmail ldapFieldName = FieldMapping "emails" $
         \case
           [] -> Right id
           [val] -> case Text.Email.Validate.validate (SC.cs val) of
@@ -268,7 +275,7 @@ ldapToScim conf entry@(SearchEntry _ attrs) = (entry,) <$> Foldable.foldl' go (R
     go :: m User -> (Attr, [AttrValue]) -> m User
     go scimval (Attr key, vals) = case Map.lookup key (fromMapping $ mapping conf) of
       Nothing -> scimval
-      Just (FieldMapping f) -> case (scimval, f (codec <$> vals)) of
+      Just (FieldMapping _ f) -> case (scimval, f (codec <$> vals)) of
         (Right scimusr, Right f') -> Right (f' scimusr)
         (Right _, Left err) -> Left [(entry, err)]
         (Left errs, Right _) -> Left errs
@@ -423,4 +430,5 @@ main :: IO ()
 main = do
   myconf :: BridgeConf <- parseCli
   lgr :: Logger <- mkLogger (logLevel myconf)
+  lgr Debug $ show (mapping myconf)
   updateScimPeer lgr myconf
