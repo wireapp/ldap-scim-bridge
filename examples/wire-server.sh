@@ -37,7 +37,7 @@ function scaffolding_spar() {
     WIRE_USER=$(${WIRE_SERVER_PATH}/deploy/services-demo/create_test_team_admins.sh -c)
     WIRE_USERID=$(echo $WIRE_USER | perl -ne '/^([^,]+),([^,]+),([^,]+)$/ && print $1')
     WIRE_PASSWD=$(echo $WIRE_USER | perl -ne '/^([^,]+),([^,]+),([^,]+)$/ && print $3')
-    WIRE_TEAMID=$(curl -s -H'content-type: application/json' -H'Z-User: '"${WIRE_USERID}" http://localhost:8082/self | jq .team | perl -pe 's/"//g')
+    WIRE_TEAMID=$(curl -s -H'content-type: application/json' -H'Z-User: '"${WIRE_USERID}" http://localhost:8082/self | jq .team | xargs echo)
     SCIM_TOKEN_FULL=$(curl -v -X POST \
       --header "Z-User: $WIRE_USERID" \
       --header 'Content-Type: application/json;charset=utf-8' \
