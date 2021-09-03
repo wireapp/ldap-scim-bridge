@@ -51,7 +51,7 @@ function scaffolding_spar() {
   export WIRE_SERVER_PATH=~/src/wire-server
   export SPAR_URL=http://localhost:8088
   export BRIG_URL=http://localhost:8088
-  if ( curl -q $BRIG_URL/i/status ); then
+  if ( curl -s $BRIG_URL/i/status ); then
     WIRE_USER=$(${WIRE_SERVER_PATH}/deploy/services-demo/create_test_team_admins.sh -c)
     WIRE_USERID=$(echo $WIRE_USER | sed 's/^\([^,]\+\),\([^,]\+\),\([^,]\+\)$/\1/')
     WIRE_PASSWD=$(echo $WIRE_USER | sed 's/^\([^,]\+\),\([^,]\+\),\([^,]\+\)$/\3/')
