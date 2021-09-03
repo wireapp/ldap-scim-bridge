@@ -1,0 +1,27 @@
+logLevel: "Debug"  # one of Trace,Debug,Info,Warn,Error,Fatal; `Fatal` is least noisy, `Trace` most.
+ldapSource:
+  tls: false
+  host: "localhost"
+  port: 389
+  dn: "cn=admin,dc=nodomain"
+  password: "geheim"
+  search:
+    base: "ou=People,dc=nodomain"
+    objectClass: "account"
+  codec: "utf8"
+  deleteOnAttribute:  # optional, related to `delete-from-directory`.
+    key: "deleted"
+    value: "true"
+  deleteFromDirectory:  # optional; ok to use together with `delete-on-attribute` if you use both.
+    base: "ou=DeletedPeople,dc=nodomain"
+    objectClass: "account"
+scimTarget:
+  tls: false
+  host: "localhost"
+  port: 8088
+  path: "/scim/v2"
+  token: "Bearer RRhtCL/VF9IYcmb3E9zaDo3rP6w3mZ3Ww3da7d2RDR8="
+mapping:
+  userName: "uidNumber"
+  externalId: "email"
+  email: "email"
