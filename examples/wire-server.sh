@@ -3,7 +3,9 @@
 # put this to work with https://github.com/wireapp/wire-server
 
 set -xe
-cd "$( dirname "${BASH_SOURCE[0]}" )"
+cd "$( dirname "${BASH_SOURCE[0]}" )"/..
+
+export BRIDGE_CONF=./sample-conf.yaml
 
 function install() {
   sudo apt-get install ldapscripts ldap-utils slapd
@@ -50,11 +52,11 @@ function scaffolding_spar() {
     echo "${WIRE_SERVER_PATH}/services/start-services-only.sh"
     exit 1
   fi
-  perl -i.bak -ne 'if (/^\s+token: \"Bearer .*$/) { print "  token: \"Bearer '"${SCIM_TOKEN}"'\"\n" } else { print }' ./sample-conf.yaml
+  perl -i.bak -ne 'if (/^\s+token: \"Bearer .*$/) { print "  token: \"Bearer '"${SCIM_TOKEN}"'\"\n" } else { print }' $BRIDGE_CONF
 }
 
 function run() {
-  cabal run ldap-scim-bridge ./sample-conf.yaml
+  cabal run ldap-scim-bridge $BRIDGE_CONF
 }
 
 scaffolding_spar
