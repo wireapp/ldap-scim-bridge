@@ -95,7 +95,7 @@ function scaffolding_spar() {
 }
 
 function assert_num_members() {
-    sleep .3 # mitigate race conditions (probably unnecessary)
+    sleep 2 # mitigate race conditions (increase the time if this function fails)
     if [ "$(curl -s -H'content-type: application/json' -H'Z-User: '"${WIRE_USERID}" http://localhost:8085/teams/${WIRE_TEAMID}/members | jq '.members|length')" != "$1" ]; then
       echo "$2"
       false
