@@ -85,4 +85,16 @@ echo SCIM_TOKEN: $SCIM_TOKEN
 
 run
 
-curl -s -H'content-type: application/json' -H'Z-User: '"${WIRE_USERID}" http://localhost:8085/teams/${WIRE_TEAMID}/members | jq .
+export INVITATIONS=$(curl -s -H'content-type: application/json' -H'Z-User: '"${WIRE_USERID}" http://localhost:8082/teams/${WIRE_TEAMID}/invitations)
+# the following two are not supposed to show anything because the user has only been invited so far:
+#curl -s -H'content-type: application/json' -H'Z-User: '"${WIRE_USERID}" http://localhost:8085/teams/${WIRE_TEAMID}/members | jq .
+#curl -s -H'content-type: text/csv' -H'Z-User: '"${WIRE_USERID}" http://localhost:8085/teams/${WIRE_TEAMID}/members/csv
+
+export INVITATION_ID=$(echo $INVITATIONS | jq '.invitations[0].id')
+if [ "$INVITATION_ID" == "null" ]; then
+    echo "could not find invitation:"
+    echo $INVITATIONS
+    exit 1
+else
+    echo "invitation sent: $INVITATION_ID"
+fi
