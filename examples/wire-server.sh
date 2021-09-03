@@ -21,7 +21,17 @@ set -o pipefail
 set -o errexit
 cd "$( dirname "${BASH_SOURCE[0]}" )"/..
 
-export BRIDGE_CONF=./sample-conf.yaml
+export BRIDGE_CONF1=./examples/wire-server-conf1.yaml
+export BRIDGE_CONF2=./examples/wire-server-conf2.yaml
+export WIRE_USERID
+export WIRE_TEAMID
+export SCIM_TOKEN
+export SCIM_TOKEN_ID
+export SCIM_TOKEN_FULL
+export WIRE_SERVER_PATH=~/src/wire-server
+export SPAR_URL=http://localhost:8088
+export BRIG_URL=http://localhost:8088
+export GALLEY_URL=http://localhost:8085
 
 function install() {
   sudo apt-get install ldapscripts ldap-utils slapd
@@ -42,15 +52,7 @@ function scaffolding2() {
   sudo ldapadd -D "cn=admin,dc=nodomain" -w geheim -H ldapi:/// -f ./ldif/deleted_users.ldif
 }
 
-export WIRE_USERID
-export WIRE_TEAMID
-export SCIM_TOKEN
-export SCIM_TOKEN_ID
-export SCIM_TOKEN_FULL
 function scaffolding_spar() {
-  export WIRE_SERVER_PATH=~/src/wire-server
-  export SPAR_URL=http://localhost:8088
-  export BRIG_URL=http://localhost:8088
   if ( curl -s $BRIG_URL/i/status ); then
     WIRE_USER=$(${WIRE_SERVER_PATH}/deploy/services-demo/create_test_team_admins.sh -c)
     WIRE_USERID=$(echo $WIRE_USER | sed 's/^\([^,]\+\),\([^,]\+\),\([^,]\+\)$/\1/')
