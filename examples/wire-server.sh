@@ -16,7 +16,9 @@
 # approach can be found in
 # https://github.com/wireapp/wire-server/pull/1709.
 
-set -xe
+set -x
+set -o pipefail
+set -o errexit
 cd "$( dirname "${BASH_SOURCE[0]}" )"/..
 
 export BRIDGE_CONF=./sample-conf.yaml
