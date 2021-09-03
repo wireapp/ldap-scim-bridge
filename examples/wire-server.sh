@@ -61,14 +61,17 @@ function scaffolding_spar() {
       --header 'Content-Type: application/json;charset=utf-8' \
       -d '{ "description": "test '"`date`"'", "password": "'"$WIRE_PASSWD"'" }' \
       ${SPAR_URL}/scim/auth-tokens)
-    SCIM_TOKEN=$(echo $SCIM_TOKEN_FULL | jq -r .token)
     SCIM_TOKEN_ID=$(echo $SCIM_TOKEN_FULL | jq -r .info.id)
+    SCIM_TOKEN=$(echo $SCIM_TOKEN_FULL | jq -r .token)
+    ESCAPED_SCIM_TOKEN=$(echo $SCIM_TOKEN | sed 's/\+/\\\+/g;s_/_\\/_g;s/\=/\\=/g')
+    sed -i 's/^  token: \"Bearer .*$/  token: \"Bearer '"${ESCAPED_SCIM_TOKEN}"'"/' $BRIDGE_CONF1
+    sed -i 's/^  token: \"Bearer .*$/  token: \"Bearer '"${ESCAPED_SCIM_TOKEN}"'"/' $BRIDGE_CONF2
   else
+    # no wire-server running?
     echo "${WIRE_SERVER_PATH}/deploy/dockerephemeral/run.sh"
     echo "${WIRE_SERVER_PATH}/services/start-services-only.sh"
-    exit 1
+    false
   fi
-  perl -i.bak -ne 'if (/^\s+token: \"Bearer .*$/) { print "  token: \"Bearer '"${SCIM_TOKEN}"'\"\n" } else { print }' $BRIDGE_CONF
 }
 
 function run() {
