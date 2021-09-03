@@ -1,6 +1,20 @@
 #!/bin/bash
 
 # put this to work with https://github.com/wireapp/wire-server
+#
+# if you are not familiar with / interested in the wire app, but want
+# to bridge ldap and scim in some other context, this file should
+# still serve you as a proof of concept, just ignore the parts where
+# we're talking to wire.
+#
+# if you have managed to mutate this file into something that works
+# for a different use case, or even if you run out of steam trying,
+# we'd appreciate a PR or at least an issue with a code dump.
+#
+# WARNING: this test is hard to run, and it does not worry about
+# polluting your system state.  are cleaner, but more involved
+# approach can be found in
+# https://github.com/wireapp/wire-server/pull/1709.
 
 set -xe
 cd "$( dirname "${BASH_SOURCE[0]}" )"/..
