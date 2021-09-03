@@ -19,10 +19,10 @@
 set -x
 set -o pipefail
 set -o errexit
-cd "$( dirname "${BASH_SOURCE[0]}" )"/..
+cd "$( dirname "${BASH_SOURCE[0]}" )"/../../
 
-export BRIDGE_CONF1=./examples/wire-server-conf1.yaml
-export BRIDGE_CONF2=./examples/wire-server-conf2.yaml
+export BRIDGE_CONF1=./examples/wire-server/conf1.yaml
+export BRIDGE_CONF2=./examples/wire-server/conf2.yaml
 export WIRE_USERID
 export WIRE_TEAMID
 export SCIM_TOKEN
