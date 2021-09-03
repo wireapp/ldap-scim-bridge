@@ -1,0 +1,21 @@
+logLevel: "Debug"  # one of Trace,Debug,Info,Warn,Error,Fatal; `Fatal` is least noisy, `Trace` most.
+ldapSource:
+  tls: false
+  host: "localhost"
+  port: 389
+  dn: "cn=admin,dc=nodomain"
+  password: "geheim"
+  search:
+    base: "ou=People,dc=nodomain"
+    objectClass: "account"
+  codec: "utf8"
+scimTarget:
+  tls: false
+  host: "localhost"
+  port: 8088
+  path: "/scim/v2"
+  token: "Bearer cznOVEqojRi/bKc6v1iyQ2eGPjp62pPBraOx4eUSsls="
+mapping:
+  userName: "uidNumber"
+  externalId: "email"
+  email: "email"

@@ -18,6 +18,7 @@ import qualified GHC.Show
 import Ldap.Client as Ldap
 import qualified Network.HTTP.Client as HTTP
 import qualified Network.HTTP.Client.TLS as HTTP
+import Servant.API.ContentTypes (NoContent)
 import Servant.Client (BaseUrl (..), ClientEnv (..), Scheme (..), mkClientEnv)
 import System.Environment (getProgName)
 import System.Logger (Level (..))
@@ -384,12 +385,19 @@ updateScimPeerPostPutStep lgr clientEnv tok scim eid = do
           lgr Info $ "unchanged: " <> show eid
         else do
           lgr Info $ "update: " <> show eid
-          void (ScimClient.putUser @ScimTag clientEnv tok eid scim)
-            `catch` \e@(SomeException _) -> lgr Error $ show e
+          process $ ScimClient.putUser @ScimTag clientEnv tok (ScimCommon.id (Scim.thing old)) scim
     Nothing -> do
       lgr Info $ "new user: " <> show eid
-      void (ScimClient.postUser clientEnv tok scim)
-        `catch` \e@(SomeException _) -> lgr Error $ show e
+      process $ ScimClient.postUser clientEnv tok scim
+  where
+    process :: IO StoredUser -> IO ()
+    process action = do
+      result :: Either SomeException StoredUser <-
+        (Right <$> action) `catch` (pure . Left)
+      result
+        & either
+          (lgr Error . show)
+          (\new -> lgr Debug $ "UserId: " <> (show . ScimCommon.id . Scim.thing $ new))
 
 updateScimPeerDelete ::
   Logger ->
@@ -400,10 +408,19 @@ updateScimPeerDelete ::
 updateScimPeerDelete lgr clientEnv tok = mapM_ $ \scim -> do
   lookupScimByExternalId clientEnv tok scim >>= \case
     Just old -> do
-      void (ScimClient.deleteUser @ScimTag clientEnv tok (ScimCommon.id (Scim.thing old)))
+      process (ScimClient.deleteUser @ScimTag clientEnv tok (ScimCommon.id (Scim.thing old)))
         `catch` \e@(SomeException _) -> lgr Error $ show e
     Nothing -> do
       pure ()
+  where
+    process :: IO NoContent -> IO ()
+    process action = do
+      result :: Either SomeException NoContent <-
+        (Right <$> action) `catch` (pure . Left)
+      result
+        & either
+          (lgr Error . show)
+          (const $ pure ())
 
 parseCli :: IO BridgeConf
 parseCli = do

@@ -1,0 +1,338 @@
+$ ./wire-server.sh
++ set -o pipefail
++ set -o errexit
+++ dirname ./wire-server.sh
++ cd ./..
++ export BRIDGE_CONF1=./examples/wire-server-conf1.yaml
++ BRIDGE_CONF1=./examples/wire-server-conf1.yaml
++ export BRIDGE_CONF2=./examples/wire-server-conf2.yaml
++ BRIDGE_CONF2=./examples/wire-server-conf2.yaml
++ export WIRE_USERID
++ export WIRE_TEAMID
++ export SCIM_TOKEN
++ export SCIM_TOKEN_ID
++ export SCIM_TOKEN_FULL
++ export WIRE_SERVER_PATH=/home/mf/src/wire-server
++ WIRE_SERVER_PATH=/home/mf/src/wire-server
++ export SPAR_URL=http://localhost:8088
++ SPAR_URL=http://localhost:8088
++ export BRIG_URL=http://localhost:8088
++ BRIG_URL=http://localhost:8088
++ export GALLEY_URL=http://localhost:8085
++ GALLEY_URL=http://localhost:8085
++ scaffolding_spar
++ curl -s http://localhost:8088/i/status
+++ /home/mf/src/wire-server/deploy/services-demo/create_test_team_admins.sh -c
++ WIRE_USER=4644b44a-ddc5-4dc9-849e-b32a6decbf88,j0KYQCqU@example.com,9gXZle96
+++ echo 4644b44a-ddc5-4dc9-849e-b32a6decbf88,j0KYQCqU@example.com,9gXZle96
+++ sed 's/^\([^,]\+\),\([^,]\+\),\([^,]\+\)$/\1/'
++ WIRE_USERID=4644b44a-ddc5-4dc9-849e-b32a6decbf88
+++ echo 4644b44a-ddc5-4dc9-849e-b32a6decbf88,j0KYQCqU@example.com,9gXZle96
+++ sed 's/^\([^,]\+\),\([^,]\+\),\([^,]\+\)$/\3/'
++ WIRE_PASSWD=9gXZle96
+++ curl -s '-Hcontent-type: application/json' '-HZ-User: 4644b44a-ddc5-4dc9-849e-b32a6decbf88' http://localhost:8082/self
+++ jq .team
+++ xargs echo
++ WIRE_TEAMID=82377b9d-095e-443b-9243-bc439ba4aab8
++ curl -s -X PUT --header 'Z-User: 4644b44a-ddc5-4dc9-849e-b32a6decbf88' --header 'Content-Type: application/json;charset=utf-8' -d '{"status": "enabled"}' http://localhost:8085/i/teams/82377b9d-095e-443b-9243-bc439ba4aab8/features/sso
+++ jq .
++++ uuid
+++ curl -X POST --header 'Z-User: 4644b44a-ddc5-4dc9-849e-b32a6decbf88' --header 'Content-Type: application/xml;charset=utf-8' -d '<EntityDescriptor xmlns:samlp="urn:oasis:names:tc:SAML:2.0:protocol" xmlns:samla="urn:oasis:names:tc:SAML:2.0:assertion" xmlns:samlm="urn:oasis:names:tc:SAML:2.0:metadata" xmlns:ds="http://www.w3.org/2000/09/xmldsig#" ID="_0c29ba62-a541-11e8-8042-873ef87bdcba" entityID="https://issuer.net/_531fd614-0cc6-11ec-93ad-836df4a3ea22" xmlns="urn:oasis:names:tc:SAML:2.0:metadata"><IDPSSODescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol"><KeyDescriptor use="signing"><ds:KeyInfo><ds:X509Data><ds:X509Certificate>MIIBOTCBxKADAgECAg4TIFmNatMeqaAE8BWQBTANBgkqhkiG9w0BAQsFADAAMB4XDTIxMDkwMzEzMjUyMVoXDTQxMDgyOTEzMjUyMVowADB6MA0GCSqGSIb3DQEBAQUAA2kAMGYCYQDPAqTk/nq2B/J0WH2FtiRh6nB8BvOc6M7d4K2KV0kXrePjeRPh+cDDf9mYrpntnjBa2LGAc0S4gjUXdvnt1Fxg2YYXYJ+N7+jxV36jUng7cGz1tEOB5RIj28Mv8/eXnjUCAREwDQYJKoZIhvcNAQELBQADYQBaIWDz832gg5jZPIy5z0CV1rWbUQALy6SUodWMezbzVF86hycUvZqAzd5Pir8084Mk/6FQK2Hbbml2LaHS8JnZpYxlgNIRNNonzScAUFclDi4NNmcxPuB6ycu9kK/0l+A=</ds:X509Certificate></ds:X509Data></ds:KeyInfo></KeyDescriptor><SingleSignOnService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST" Location="https://requri.net/fb9e3c14-25eb-482a-8df3-c71e3e83110b"/></IDPSSODescriptor></EntityDescriptor>' http://localhost:8088/identity-providers
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+100  2085    0   881  100  1204  20022  27363 --:--:-- --:--:-- --:--:-- 47386
++ export 'WIRE_SAMLIDP={
+  "id": "13bdaa43-9fa2-4199-b033-127439aa42da",
+  "metadata": {
+    "issuer": "https://issuer.net/_531fd614-0cc6-11ec-93ad-836df4a3ea22",
+    "requestURI": "https://requri.net/fb9e3c14-25eb-482a-8df3-c71e3e83110b",
+    "certAuthnResponse": [
+      "<ds:KeyInfo xmlns:ds=\"http://www.w3.org/2000/09/xmldsig#\"><ds:X509Data><ds:X509Certificate>MIIBOTCBxKADAgECAg4TIFmNatMeqaAE8BWQBTANBgkqhkiG9w0BAQsFADAAMB4XDTIxMDkwMzEzMjUyMVoXDTQxMDgyOTEzMjUyMVowADB6MA0GCSqGSIb3DQEBAQUAA2kAMGYCYQDPAqTk/nq2B/J0WH2FtiRh6nB8BvOc6M7d4K2KV0kXrePjeRPh+cDDf9mYrpntnjBa2LGAc0S4gjUXdvnt1Fxg2YYXYJ+N7+jxV36jUng7cGz1tEOB5RIj28Mv8/eXnjUCAREwDQYJKoZIhvcNAQELBQADYQBaIWDz832gg5jZPIy5z0CV1rWbUQALy6SUodWMezbzVF86hycUvZqAzd5Pir8084Mk/6FQK2Hbbml2LaHS8JnZpYxlgNIRNNonzScAUFclDi4NNmcxPuB6ycu9kK/0l+A=</ds:X509Certificate></ds:X509Data></ds:KeyInfo>"
+    ]
+  },
+  "extraInfo": {
+    "team": "82377b9d-095e-443b-9243-bc439ba4aab8",
+    "oldIssuers": [],
+    "replacedBy": null
+  }
+}'
++ WIRE_SAMLIDP='{
+  "id": "13bdaa43-9fa2-4199-b033-127439aa42da",
+  "metadata": {
+    "issuer": "https://issuer.net/_531fd614-0cc6-11ec-93ad-836df4a3ea22",
+    "requestURI": "https://requri.net/fb9e3c14-25eb-482a-8df3-c71e3e83110b",
+    "certAuthnResponse": [
+      "<ds:KeyInfo xmlns:ds=\"http://www.w3.org/2000/09/xmldsig#\"><ds:X509Data><ds:X509Certificate>MIIBOTCBxKADAgECAg4TIFmNatMeqaAE8BWQBTANBgkqhkiG9w0BAQsFADAAMB4XDTIxMDkwMzEzMjUyMVoXDTQxMDgyOTEzMjUyMVowADB6MA0GCSqGSIb3DQEBAQUAA2kAMGYCYQDPAqTk/nq2B/J0WH2FtiRh6nB8BvOc6M7d4K2KV0kXrePjeRPh+cDDf9mYrpntnjBa2LGAc0S4gjUXdvnt1Fxg2YYXYJ+N7+jxV36jUng7cGz1tEOB5RIj28Mv8/eXnjUCAREwDQYJKoZIhvcNAQELBQADYQBaIWDz832gg5jZPIy5z0CV1rWbUQALy6SUodWMezbzVF86hycUvZqAzd5Pir8084Mk/6FQK2Hbbml2LaHS8JnZpYxlgNIRNNonzScAUFclDi4NNmcxPuB6ycu9kK/0l+A=</ds:X509Certificate></ds:X509Data></ds:KeyInfo>"
+    ]
+  },
+  "extraInfo": {
+    "team": "82377b9d-095e-443b-9243-bc439ba4aab8",
+    "oldIssuers": [],
+    "replacedBy": null
+  }
+}'
+++ echo '{' '"id":' '"13bdaa43-9fa2-4199-b033-127439aa42da",' '"metadata":' '{' '"issuer":' '"https://issuer.net/_531fd614-0cc6-11ec-93ad-836df4a3ea22",' '"requestURI":' '"https://requri.net/fb9e3c14-25eb-482a-8df3-c71e3e83110b",' '"certAuthnResponse":' '[' '"<ds:KeyInfo' 'xmlns:ds=\"http://www.w3.org/2000/09/xmldsig#\"><ds:X509Data><ds:X509Certificate>MIIBOTCBxKADAgECAg4TIFmNatMeqaAE8BWQBTANBgkqhkiG9w0BAQsFADAAMB4XDTIxMDkwMzEzMjUyMVoXDTQxMDgyOTEzMjUyMVowADB6MA0GCSqGSIb3DQEBAQUAA2kAMGYCYQDPAqTk/nq2B/J0WH2FtiRh6nB8BvOc6M7d4K2KV0kXrePjeRPh+cDDf9mYrpntnjBa2LGAc0S4gjUXdvnt1Fxg2YYXYJ+N7+jxV36jUng7cGz1tEOB5RIj28Mv8/eXnjUCAREwDQYJKoZIhvcNAQELBQADYQBaIWDz832gg5jZPIy5z0CV1rWbUQALy6SUodWMezbzVF86hycUvZqAzd5Pir8084Mk/6FQK2Hbbml2LaHS8JnZpYxlgNIRNNonzScAUFclDi4NNmcxPuB6ycu9kK/0l+A=</ds:X509Certificate></ds:X509Data></ds:KeyInfo>"' ']' '},' '"extraInfo":' '{' '"team":' '"82377b9d-095e-443b-9243-bc439ba4aab8",' '"oldIssuers":' '[],' '"replacedBy":' null '}' '}'
+++ jq .id
++ '[' '"13bdaa43-9fa2-4199-b033-127439aa42da"' == null ']'
++++ date
+++ curl -X POST --header 'Z-User: 4644b44a-ddc5-4dc9-849e-b32a6decbf88' --header 'Content-Type: application/json;charset=utf-8' -d '{ "description": "test Fri 03 Sep 2021 04:50:48 PM CEST", "password": "9gXZle96" }' http://localhost:8088/scim/auth-tokens
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+100   382    0   300  100    82   6666   1822 --:--:-- --:--:-- --:--:--  8488
++ SCIM_TOKEN_FULL='{"token":"OerHNeMYllaaCbJFN4m6A8Mnz7MYhsXuEtyLuqs/oVk=","info":{"idp":"13bdaa43-9fa2-4199-b033-127439aa42da","created_at":"2021-09-03T14:50:48.080871211Z","team":"82377b9d-095e-443b-9243-bc439ba4aab8","id":"0590aedf-fbe6-4629-afc7-7fc6a974b856","description":"test Fri 03 Sep 2021 04:50:48 PM CEST"}}'
+++ echo '{"token":"OerHNeMYllaaCbJFN4m6A8Mnz7MYhsXuEtyLuqs/oVk=","info":{"idp":"13bdaa43-9fa2-4199-b033-127439aa42da","created_at":"2021-09-03T14:50:48.080871211Z","team":"82377b9d-095e-443b-9243-bc439ba4aab8","id":"0590aedf-fbe6-4629-afc7-7fc6a974b856","description":"test' Fri 03 Sep 2021 04:50:48 PM 'CEST"}}'
+++ jq -r .info.id
++ SCIM_TOKEN_ID=0590aedf-fbe6-4629-afc7-7fc6a974b856
+++ echo '{"token":"OerHNeMYllaaCbJFN4m6A8Mnz7MYhsXuEtyLuqs/oVk=","info":{"idp":"13bdaa43-9fa2-4199-b033-127439aa42da","created_at":"2021-09-03T14:50:48.080871211Z","team":"82377b9d-095e-443b-9243-bc439ba4aab8","id":"0590aedf-fbe6-4629-afc7-7fc6a974b856","description":"test' Fri 03 Sep 2021 04:50:48 PM 'CEST"}}'
+++ jq -r .token
++ SCIM_TOKEN=OerHNeMYllaaCbJFN4m6A8Mnz7MYhsXuEtyLuqs/oVk=
+++ echo OerHNeMYllaaCbJFN4m6A8Mnz7MYhsXuEtyLuqs/oVk=
+++ sed 's/\+/\\\+/g;s_/_\\/_g;s/\=/\\=/g'
++ ESCAPED_SCIM_TOKEN='OerHNeMYllaaCbJFN4m6A8Mnz7MYhsXuEtyLuqs\/oVk\='
++ sed -i 's/^  token: \"Bearer .*$/  token: \"Bearer OerHNeMYllaaCbJFN4m6A8Mnz7MYhsXuEtyLuqs\/oVk\="/' ./examples/wire-server-conf1.yaml
++ sed -i 's/^  token: \"Bearer .*$/  token: \"Bearer OerHNeMYllaaCbJFN4m6A8Mnz7MYhsXuEtyLuqs\/oVk\="/' ./examples/wire-server-conf2.yaml
++ echo WIRE_USERID: 4644b44a-ddc5-4dc9-849e-b32a6decbf88
+WIRE_USERID: 4644b44a-ddc5-4dc9-849e-b32a6decbf88
++ echo WIRE_TEAMID: 82377b9d-095e-443b-9243-bc439ba4aab8
+WIRE_TEAMID: 82377b9d-095e-443b-9243-bc439ba4aab8
++ echo SCIM_TOKEN: OerHNeMYllaaCbJFN4m6A8Mnz7MYhsXuEtyLuqs/oVk=
+SCIM_TOKEN: OerHNeMYllaaCbJFN4m6A8Mnz7MYhsXuEtyLuqs/oVk=
++ scaffolding1
++ sudo ldapadd -D cn=admin,dc=nodomain -w geheim -H ldapi:/// -f ./ldif/dirs.ldif
+adding new entry "ou=People,dc=nodomain"
+
+adding new entry "ou=DeletedPeople,dc=nodomain"
+
+adding new entry "ou=NoPeople,dc=nodomain"
+
++ sudo ldapadd -D cn=admin,dc=nodomain -w geheim -H ldapi:/// -f ./ldif/new_users.ldif
+adding new entry "cn=uses123email,ou=People,dc=nodomain"
+
++ sudo slapcat
+dn: dc=nodomain
+objectClass: top
+objectClass: dcObject
+objectClass: organization
+o: nodomain
+dc: nodomain
+structuralObjectClass: organization
+entryUUID: 0efff8b4-a112-103b-8a2d-25ddfe49ef4d
+creatorsName: cn=admin,dc=nodomain
+createTimestamp: 20210903145043Z
+entryCSN: 20210903145043.406797Z#000000#000#000000
+modifiersName: cn=admin,dc=nodomain
+modifyTimestamp: 20210903145043Z
+
+dn: ou=People,dc=nodomain
+objectClass: organizationalUnit
+ou: People
+structuralObjectClass: organizationalUnit
+entryUUID: 11d8a9d2-a112-103b-9369-f51857108368
+creatorsName: cn=admin,dc=nodomain
+createTimestamp: 20210903145048Z
+entryCSN: 20210903145048.182362Z#000000#000#000000
+modifiersName: cn=admin,dc=nodomain
+modifyTimestamp: 20210903145048Z
+
+dn: ou=DeletedPeople,dc=nodomain
+objectClass: organizationalUnit
+ou: People
+ou: DeletedPeople
+structuralObjectClass: organizationalUnit
+entryUUID: 11d96fca-a112-103b-936a-f51857108368
+creatorsName: cn=admin,dc=nodomain
+createTimestamp: 20210903145048Z
+entryCSN: 20210903145048.187453Z#000000#000#000000
+modifiersName: cn=admin,dc=nodomain
+modifyTimestamp: 20210903145048Z
+
+dn: ou=NoPeople,dc=nodomain
+objectClass: organizationalUnit
+ou: People
+ou: NoPeople
+structuralObjectClass: organizationalUnit
+entryUUID: 11da32ca-a112-103b-936b-f51857108368
+creatorsName: cn=admin,dc=nodomain
+createTimestamp: 20210903145048Z
+entryCSN: 20210903145048.192445Z#000000#000#000000
+modifiersName: cn=admin,dc=nodomain
+modifyTimestamp: 20210903145048Z
+
+dn: cn=uses123email,ou=People,dc=nodomain
+objectClass: top
+objectClass: account
+objectClass: posixAccount
+objectClass: shadowAccount
+objectClass: extensibleObject
+cn: uses123email
+uid: uses123email
+uidNumber: 10004
+gidNumber: 10004
+email: uses123@example.com
+homeDirectory: /home/me
+userPassword:: bm90Z29ubmF0ZWxsZWl0aGVy
+loginShell: /bin/bash
+structuralObjectClass: account
+entryUUID: 11dc6b58-a112-103b-936c-f51857108368
+creatorsName: cn=admin,dc=nodomain
+createTimestamp: 20210903145048Z
+entryCSN: 20210903145048.206998Z#000000#000#000000
+modifiersName: cn=admin,dc=nodomain
+modifyTimestamp: 20210903145048Z
+
++ cabal run ldap-scim-bridge ./examples/wire-server-conf1.yaml
+Up to date
+2021-09-03T14:50:48Z, D, "Mapping {fromMapping = fromList [(\"email\",[\"emails\",\"externalId\"]),(\"uidNumber\",[\"userName\"])]}"
+2021-09-03T14:50:48Z, I, "[post/put: started]"
+2021-09-03T14:50:48Z, D, "Pulled the following ldap users for post/put:\n[SearchEntry (Dn \"cn=uses123email,ou=People,dc=nodomain\") [(Attr \"objectClass\",[\"top\",\"account\",\"posixAccount\",\"shadowAccount\",\"extensibleObject\"]),(Attr \"cn\",[\"uses123email\"]),(Attr \"uid\",[\"uses123email\"]),(Attr \"uidNumber\",[\"10004\"]),(Attr \"gidNumber\",[\"10004\"]),(Attr \"email\",[\"uses123@example.com\"]),(Attr \"homeDirectory\",[\"/home/me\"]),(Attr \"userPassword\",[\"notgonnatelleither\"]),(Attr \"loginShell\",[\"/bin/bash\"])]]"
+2021-09-03T14:50:48Z, D, "Translated to scim:\n[\n    {\n        \"emails\": [\n            {\n                \"value\": \"uses123@example.com\"\n            }\n        ],\n        \"userName\": \"10004\",\n        \"externalId\": \"uses123@example.com\",\n        \"schemas\": [\n            \"urn:ietf:params:scim:schemas:core:2.0:User\"\n        ]\n    }\n]"
+2021-09-03T14:50:48Z, I, "new user: \"uses123@example.com\""
+2021-09-03T14:50:48Z, D, "UserId: \"97d307eb-3512-4b80-b14f-44d9cbfa1787\""
+2021-09-03T14:50:48Z, I, "[post/put: done]"
+2021-09-03T14:50:48Z, I, "[delete: started]"
+2021-09-03T14:50:48Z, D, "Pulled the following ldap users for delete:\n[]"
+2021-09-03T14:50:48Z, D, "Translated to scim:\n[]"
+2021-09-03T14:50:48Z, I, "[delete: done]"
++ assert_num_members 2 'user could not be created!'
++ sleep .3
+++ curl -s '-Hcontent-type: application/json' '-HZ-User: 4644b44a-ddc5-4dc9-849e-b32a6decbf88' http://localhost:8085/teams/82377b9d-095e-443b-9243-bc439ba4aab8/members
+++ jq '.members|length'
++ '[' 2 '!=' 2 ']'
++ scaffolding2
++ sudo ldapadd -D cn=admin,dc=nodomain -w geheim -H ldapi:/// -f ./ldif/deleted_users.ldif
+adding new entry "cn=uses123email,ou=DeletedPeople,dc=nodomain"
+
+adding new entry "cn=notcreated,ou=DeletedPeople,dc=nodomain"
+
++ sudo slapcat
+dn: dc=nodomain
+objectClass: top
+objectClass: dcObject
+objectClass: organization
+o: nodomain
+dc: nodomain
+structuralObjectClass: organization
+entryUUID: 0efff8b4-a112-103b-8a2d-25ddfe49ef4d
+creatorsName: cn=admin,dc=nodomain
+createTimestamp: 20210903145043Z
+entryCSN: 20210903145043.406797Z#000000#000#000000
+modifiersName: cn=admin,dc=nodomain
+modifyTimestamp: 20210903145043Z
+
+dn: ou=People,dc=nodomain
+objectClass: organizationalUnit
+ou: People
+structuralObjectClass: organizationalUnit
+entryUUID: 11d8a9d2-a112-103b-9369-f51857108368
+creatorsName: cn=admin,dc=nodomain
+createTimestamp: 20210903145048Z
+entryCSN: 20210903145048.182362Z#000000#000#000000
+modifiersName: cn=admin,dc=nodomain
+modifyTimestamp: 20210903145048Z
+
+dn: ou=DeletedPeople,dc=nodomain
+objectClass: organizationalUnit
+ou: People
+ou: DeletedPeople
+structuralObjectClass: organizationalUnit
+entryUUID: 11d96fca-a112-103b-936a-f51857108368
+creatorsName: cn=admin,dc=nodomain
+createTimestamp: 20210903145048Z
+entryCSN: 20210903145048.187453Z#000000#000#000000
+modifiersName: cn=admin,dc=nodomain
+modifyTimestamp: 20210903145048Z
+
+dn: ou=NoPeople,dc=nodomain
+objectClass: organizationalUnit
+ou: People
+ou: NoPeople
+structuralObjectClass: organizationalUnit
+entryUUID: 11da32ca-a112-103b-936b-f51857108368
+creatorsName: cn=admin,dc=nodomain
+createTimestamp: 20210903145048Z
+entryCSN: 20210903145048.192445Z#000000#000#000000
+modifiersName: cn=admin,dc=nodomain
+modifyTimestamp: 20210903145048Z
+
+dn: cn=uses123email,ou=People,dc=nodomain
+objectClass: top
+objectClass: account
+objectClass: posixAccount
+objectClass: shadowAccount
+objectClass: extensibleObject
+cn: uses123email
+uid: uses123email
+uidNumber: 10004
+gidNumber: 10004
+email: uses123@example.com
+homeDirectory: /home/me
+userPassword:: bm90Z29ubmF0ZWxsZWl0aGVy
+loginShell: /bin/bash
+structuralObjectClass: account
+entryUUID: 11dc6b58-a112-103b-936c-f51857108368
+creatorsName: cn=admin,dc=nodomain
+createTimestamp: 20210903145048Z
+entryCSN: 20210903145048.206998Z#000000#000#000000
+modifiersName: cn=admin,dc=nodomain
+modifyTimestamp: 20210903145048Z
+
+dn: cn=uses123email,ou=DeletedPeople,dc=nodomain
+objectClass: top
+objectClass: account
+objectClass: posixAccount
+objectClass: shadowAccount
+objectClass: extensibleObject
+cn: uses123email
+uid: uses123email
+uidNumber: 10004
+gidNumber: 10004
+email: uses123@example.com
+homeDirectory: /home/me
+userPassword:: bm90Z29ubmF0ZWxsZWl0aGVy
+loginShell: /bin/bash
+structuralObjectClass: account
+entryUUID: 125ab85a-a112-103b-936d-f51857108368
+creatorsName: cn=admin,dc=nodomain
+createTimestamp: 20210903145049Z
+entryCSN: 20210903145049.034725Z#000000#000#000000
+modifiersName: cn=admin,dc=nodomain
+modifyTimestamp: 20210903145049Z
+
+dn: cn=notcreated,ou=DeletedPeople,dc=nodomain
+objectClass: top
+objectClass: account
+objectClass: posixAccount
+objectClass: shadowAccount
+objectClass: extensibleObject
+cn: notcreated
+uid: notcreated
+uidNumber: 10004
+gidNumber: 10004
+email: notcreated@example.com
+homeDirectory: /home/me2
+userPassword:: bm90Z29ubmF0ZWxsZWl0aGVy
+loginShell: /bin/bash
+structuralObjectClass: account
+entryUUID: 125b7bc8-a112-103b-936e-f51857108368
+creatorsName: cn=admin,dc=nodomain
+createTimestamp: 20210903145049Z
+entryCSN: 20210903145049.039729Z#000000#000#000000
+modifiersName: cn=admin,dc=nodomain
+modifyTimestamp: 20210903145049Z
+
++ cabal run ldap-scim-bridge ./examples/wire-server-conf2.yaml
+Up to date
+2021-09-03T14:50:49Z, D, "Mapping {fromMapping = fromList [(\"email\",[\"emails\",\"externalId\"]),(\"uidNumber\",[\"userName\"])]}"
+2021-09-03T14:50:49Z, I, "[post/put: started]"
+2021-09-03T14:50:49Z, D, "Pulled the following ldap users for post/put:\n[]"
+2021-09-03T14:50:49Z, D, "Translated to scim:\n[]"
+2021-09-03T14:50:49Z, I, "[post/put: done]"
+2021-09-03T14:50:49Z, I, "[delete: started]"
+2021-09-03T14:50:49Z, D, "Pulled the following ldap users for delete:\n[SearchEntry (Dn \"cn=notcreated,ou=DeletedPeople,dc=nodomain\") [(Attr \"objectClass\",[\"top\",\"account\",\"posixAccount\",\"shadowAccount\",\"extensibleObject\"]),(Attr \"cn\",[\"notcreated\"]),(Attr \"uid\",[\"notcreated\"]),(Attr \"uidNumber\",[\"10004\"]),(Attr \"gidNumber\",[\"10004\"]),(Attr \"email\",[\"notcreated@example.com\"]),(Attr \"homeDirectory\",[\"/home/me2\"]),(Attr \"userPassword\",[\"notgonnatelleither\"]),(Attr \"loginShell\",[\"/bin/bash\"])],SearchEntry (Dn \"cn=uses123email,ou=DeletedPeople,dc=nodomain\") [(Attr \"objectClass\",[\"top\",\"account\",\"posixAccount\",\"shadowAccount\",\"extensibleObject\"]),(Attr \"cn\",[\"uses123email\"]),(Attr \"uid\",[\"uses123email\"]),(Attr \"uidNumber\",[\"10004\"]),(Attr \"gidNumber\",[\"10004\"]),(Attr \"email\",[\"uses123@example.com\"]),(Attr \"homeDirectory\",[\"/home/me\"]),(Attr \"userPassword\",[\"notgonnatelleither\"]),(Attr \"loginShell\",[\"/bin/bash\"])]]"
+2021-09-03T14:50:49Z, D, "Translated to scim:\n[\n    {\n        \"emails\": [\n            {\n                \"value\": \"notcreated@example.com\"\n            }\n        ],\n        \"userName\": \"10004\",\n        \"externalId\": \"notcreated@example.com\",\n        \"schemas\": [\n            \"urn:ietf:params:scim:schemas:core:2.0:User\"\n        ]\n    },\n    {\n        \"emails\": [\n            {\n                \"value\": \"uses123@example.com\"\n            }\n        ],\n        \"userName\": \"10004\",\n        \"externalId\": \"uses123@example.com\",\n        \"schemas\": [\n            \"urn:ietf:params:scim:schemas:core:2.0:User\"\n        ]\n    }\n]"
+2021-09-03T14:50:49Z, I, "[delete: done]"
++ assert_num_members 1 'user could not be deleted!'
++ sleep .3
+++ curl -s '-Hcontent-type: application/json' '-HZ-User: 4644b44a-ddc5-4dc9-849e-b32a6decbf88' http://localhost:8085/teams/82377b9d-095e-443b-9243-bc439ba4aab8/members
+++ jq '.members|length'
++ '[' 1 '!=' 1 ']'
