@@ -5,3 +5,7 @@ ou: People
 dn: ou=DeletedPeople,dc=nodomain
 objectClass: organizationalUnit
 ou: People
+
+dn: ou=NoPeople,dc=nodomain
+objectClass: organizationalUnit
+ou: People

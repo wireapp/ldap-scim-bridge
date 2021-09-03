@@ -9,12 +9,6 @@ ldapSource:
     base: "ou=People,dc=nodomain"
     objectClass: "account"
   codec: "utf8"
-  deleteOnAttribute:  # optional, related to `delete-from-directory`.
-    key: "deleted"
-    value: "true"
-  deleteFromDirectory:  # optional; ok to use together with `delete-on-attribute` if you use both.
-    base: "ou=DeletedPeople,dc=nodomain"
-    objectClass: "account"
 scimTarget:
   tls: false
   host: "localhost"

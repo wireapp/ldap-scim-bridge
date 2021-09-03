@@ -6,7 +6,7 @@ ldapSource:
   dn: "cn=admin,dc=nodomain"
   password: "geheim"
   search:
-    base: "ou=People,dc=nodomain"
+    base: "ou=NoPeople,dc=nodomain"
     objectClass: "account"
   codec: "utf8"
   deleteOnAttribute:  # optional, related to `delete-from-directory`.

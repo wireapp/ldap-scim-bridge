@@ -95,6 +95,7 @@ function scaffolding_spar() {
 }
 
 function assert_num_members() {
+    sleep .3 # mitigate race conditions (probably unnecessary)
     if [ "$(curl -s -H'content-type: application/json' -H'Z-User: '"${WIRE_USERID}" http://localhost:8085/teams/${WIRE_TEAMID}/members | jq '.members|length')" != "$1" ]; then
       echo "$2"
       false
@@ -112,9 +113,9 @@ echo SCIM_TOKEN: $SCIM_TOKEN
 scaffolding1
 sudo slapcat
 cabal run ldap-scim-bridge $BRIDGE_CONF1
-assert_num_members 1 "user could not be created!"
+assert_num_members 2 "user could not be created!"
 
 scaffolding2
 sudo slapcat
 cabal run ldap-scim-bridge $BRIDGE_CONF2
-assert_num_members 2 "user could not be deleted!"
+assert_num_members 1 "user could not be deleted!"
