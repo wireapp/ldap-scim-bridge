@@ -94,32 +94,27 @@ function scaffolding_spar() {
   fi
 }
 
-function run() {
-  cabal run ldap-scim-bridge $BRIDGE_CONF
+function assert_num_members() {
+    if [ "$(curl -s -H'content-type: application/json' -H'Z-User: '"${WIRE_USERID}" http://localhost:8085/teams/${WIRE_TEAMID}/members | jq '.members|length')" != "$1" ]; then
+      echo "$2"
+      false
+    fi
 }
+
+# ----------------------------------------------------------------------
+# main
 
 scaffolding_spar
 echo WIRE_USERID: $WIRE_USERID
 echo WIRE_TEAMID: $WIRE_TEAMID
 echo SCIM_TOKEN: $SCIM_TOKEN
 
-#scaffolding1
-#sudo slapcat
-#clear
-#exit 0
+scaffolding1
+sudo slapcat
+cabal run ldap-scim-bridge $BRIDGE_CONF1
+assert_num_members 1 "user could not be created!"
 
-run
-
-export INVITATIONS=$(curl -s -H'content-type: application/json' -H'Z-User: '"${WIRE_USERID}" http://localhost:8082/teams/${WIRE_TEAMID}/invitations)
-# the following two are not supposed to show anything because the user has only been invited so far:
-#curl -s -H'content-type: application/json' -H'Z-User: '"${WIRE_USERID}" http://localhost:8085/teams/${WIRE_TEAMID}/members | jq .
-#curl -s -H'content-type: text/csv' -H'Z-User: '"${WIRE_USERID}" http://localhost:8085/teams/${WIRE_TEAMID}/members/csv
-
-export INVITATION_ID=$(echo $INVITATIONS | jq '.invitations[0].id')
-if [ "$INVITATION_ID" == "null" ]; then
-    echo "could not find invitation:"
-    echo $INVITATIONS
-    exit 1
-else
-    echo "invitation sent: $INVITATION_ID"
-fi
+scaffolding2
+sudo slapcat
+cabal run ldap-scim-bridge $BRIDGE_CONF2
+assert_num_members 2 "user could not be deleted!"
