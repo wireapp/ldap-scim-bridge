@@ -1,6 +1,6 @@
 cabal-version:       2.4
 name:                ldap-scim-bridge
-version:             0.1
+version:             0.2
 synopsis:            See README for synopsis
 description:         See README for description
 homepage:            https://github.com/fisx/ldap-scim-bridge
@@ -12,8 +12,12 @@ maintainer:          Matthias Fischmann <mf@zerobuzz.net>
 copyright:           (c) 2021 wire.com
 category:            System
 build-type:          Simple
-extra-doc-files:     README.md
-                     CHANGELOG.md
+extra-doc-files:     examples/wire-server/run.sh
+                     examples/wire-server/conf1.yaml
+                     examples/wire-server/conf2.yaml
+                     examples/wire-server/runlog
+extra-source-files:  README.md
+
 tested-with:         GHC == 8.8.3
 
 source-repository head
