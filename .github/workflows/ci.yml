@@ -61,7 +61,7 @@ jobs:
       id: build-image
       uses: redhat-actions/buildah-build@v2
       with:
-        image: quay.io/wire/ldap-scim-bridge
+        image: ldap-scim-bridge
         tags: ${{ steps.vars.outputs.tag }}
         dockerfiles: |
           ./Dockerfile
