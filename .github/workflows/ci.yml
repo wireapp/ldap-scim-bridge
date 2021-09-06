@@ -57,7 +57,7 @@ jobs:
       id: vars
       run: echo ::set-output name=tag::${GITHUB_REF#refs/*/v}
 
-      - name: Build Image
+    - name: Build Image
       id: build-image
       uses: redhat-actions/buildah-build@v2
       with:
