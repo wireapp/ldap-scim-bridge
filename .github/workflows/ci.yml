@@ -53,12 +53,16 @@ jobs:
     - uses: actions/checkout@v2
       if: github.event.action == 'opened' || github.event.action == 'synchronize' || github.event.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/v')
 
-    - name: Build Image
+    - name: Set output
+      id: vars
+      run: echo ::set-output name=tag::${GITHUB_REF#refs/*/v}
+
+      - name: Build Image
       id: build-image
       uses: redhat-actions/buildah-build@v2
       with:
         image: quay.io/wire/ldap-scim-bridge
-        tags: ${{ github.sha }}
+        tags: ${{ steps.vars.outputs.tag }}
         dockerfiles: |
           ./Dockerfile
 
@@ -68,7 +72,7 @@ jobs:
       uses: redhat-actions/push-to-registry@v2
       with:
         image: ${{ steps.build-image.outputs.image }}
-        tags: ${{ github.event.ref }}
+        tags: ${{ steps.build-image.outputs.image }} 
         registry: quay.io/wire
         username: wire+ldapscimbridge
         password: ${{ secrets.REGISTRY_PASSWORD }}
