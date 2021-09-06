@@ -5,6 +5,8 @@ on:
   pull_request:
   push:
     branches: [master]
+    tags:
+    - 'v*'    
 
 jobs:
   build:
@@ -46,8 +48,18 @@ jobs:
         dockerfiles: |
           ./Dockerfile
 
+    - name: Test
+      run: |
+        echo 'No tests'
+
+  publish:
+    needs: build
+    runs-on: ubuntu-16.04
+    if: github.event_name == 'create' && startsWith(github.ref, 'refs/tags/v')
+
     - name: Push To quay.io
       id: push-to-quay
+      
       uses: redhat-actions/push-to-registry@v2
       with:
         image: ${{ steps.build-image.outputs.image }}
@@ -55,14 +67,7 @@ jobs:
         registry: quay.io/wire
         username: wire+ldapscimbridge
         password: ${{ secrets.REGISTRY_PASSWORD }}
-      on:
-        push:
-          tags:
-          - '**'
+
           
     - name: Print image url
       run: echo "Image pushed to ${{ steps.push-to-quay.outputs.registry-paths }}"
-
-    - name: Test
-      run: |
-        echo 'No tests'
