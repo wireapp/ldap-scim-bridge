@@ -37,6 +37,32 @@ jobs:
         cabal v2-update
         cabal v2-build --enable-tests --enable-benchmarks
 
+    - name: Build Image
+      id: build-image
+      uses: redhat-actions/buildah-build@v2
+      with:
+        image: quay.io/wire/ldap-scim-bridge
+        tags: ${{ github.sha }}
+        dockerfiles: |
+          ./Dockerfile
+
+    - name: Push To quay.io
+      id: push-to-quay
+      uses: redhat-actions/push-to-registry@v2
+      with:
+        image: ${{ steps.build-image.outputs.image }}
+        tags: ${{ github.event.ref }}
+        registry: quay.io/wire
+        username: wire+ldapscimbridge
+        password: ${{ secrets.REGISTRY_PASSWORD }}
+      on:
+        push:
+          tags:
+          - '**'
+          
+    - name: Print image url
+      run: echo "Image pushed to ${{ steps.push-to-quay.outputs.registry-paths }}"
+
     - name: Test
       run: |
         echo 'No tests'
