@@ -301,8 +301,8 @@ ldapToScim conf entry@(SearchEntry _ attrs) = (entry,) <$> Foldable.foldl' go (R
       (Left errs, Right _) -> Left errs
       (Left errs, Left err) -> Left ((entry, err) : errs)
 
-connectScim :: ScimConf -> IO ClientEnv
-connectScim conf = do
+connectScim :: Logger -> ScimConf -> IO ClientEnv
+connectScim lgr conf = (`catch` logErrors) $ do
   let settings =
         if scimTls conf
           then HTTP.tlsManagerSettings
@@ -310,6 +310,10 @@ connectScim conf = do
   manager <- HTTP.newManager settings
   let base = BaseUrl Http (scimHost conf) (scimPort conf) (scimPath conf)
   pure $ mkClientEnv manager base
+  where
+    logErrors (SomeException e) = do
+      lgr Error $ "could not connect to scim peer: " <> show e
+      throwIO e
 
 isDeletee :: LdapConf -> SearchEntry -> Bool
 isDeletee conf = case ldapDeleteOnAttribute conf of
@@ -320,7 +324,7 @@ isDeletee conf = case ldapDeleteOnAttribute conf of
 
 updateScimPeer :: Logger -> BridgeConf -> IO ()
 updateScimPeer lgr conf = do
-  clientEnv <- connectScim (scimTarget conf)
+  clientEnv <- connectScim lgr (scimTarget conf)
   let tok = Just . scimToken . scimTarget $ conf
   ldaps :: [SearchEntry] <-
     either (throwIO . ErrorCall . show) pure =<< listLdapUsers (ldapSource conf) (ldapSearch (ldapSource conf))
@@ -471,4 +475,9 @@ main = do
   myconf :: BridgeConf <- parseCli
   lgr :: Logger <- mkLogger (logLevel myconf)
   lgr Debug $ show (mapping myconf)
-  updateScimPeer lgr myconf
+  updateScimPeer lgr myconf `catch` logErrors lgr
+  where
+    logErrors :: Logger -> SomeException -> IO a
+    logErrors lgr (SomeException e) = do
+      lgr Fatal $ "uncaught exception: " <> show e
+      throwIO e
