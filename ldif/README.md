@@ -6,4 +6,4 @@ $ ldapadd -D "cn=admin,dc=nodomain" -W -H ldapi:/// -f ./<...>.ldif
 ```
 
 The objectClass `extensibleObject` could be replaced by
-`iNetOrgPerson` (both works).
+`inetOrgPerson` (both works).
