@@ -199,6 +199,7 @@ newtype Mapping = Mapping {fromMapping :: Map Text [FieldMapping]}
 
 instance Aeson.FromJSON Mapping where
   parseJSON = Aeson.withObject "Mapping" $ \obj -> do
+    fdisplayName <- obj Aeson..: "displayName"
     fuserName <- obj Aeson..: "userName"
     fexternalId <- obj Aeson..: "externalId"
     mfemail <- obj Aeson..:? "email"
@@ -209,17 +210,27 @@ instance Aeson.FromJSON Mapping where
             go mp (k, b) = Map.alter (Just . maybe [b] (b :)) k mp
 
     pure . Mapping . listToMap . catMaybes $
-      [ Just (fuserName, mapUserName fuserName),
+      [ Just (fdisplayName, mapDisplayName fdisplayName),
+        Just (fuserName, mapUserName fuserName),
         Just (fexternalId, mapExternalId fexternalId),
         (\femail -> (femail, mapEmail femail)) <$> mfemail
       ]
     where
+      -- The name that shows for this user in wire.
+      mapDisplayName :: Text -> FieldMapping
+      mapDisplayName ldapFieldName = FieldMapping "displayName" $
+        \case
+          [val] -> Right $ \usr -> usr {Scim.displayName = Just val}
+          bad -> Left $ WrongNumberOfAttrValues ldapFieldName "1" (Prelude.length bad)
+
+      -- Really, not username, but handle.
       mapUserName :: Text -> FieldMapping
       mapUserName ldapFieldName = FieldMapping "userName" $
         \case
           [val] -> Right $ \usr -> usr {Scim.userName = val}
           bad -> Left $ WrongNumberOfAttrValues ldapFieldName "1" (Prelude.length bad)
 
+      mapExternalId :: Text -> FieldMapping
       mapExternalId ldapFieldName = FieldMapping "externalId" $
         \case
           [val] -> Right $ \usr -> usr {Scim.externalId = Just val}

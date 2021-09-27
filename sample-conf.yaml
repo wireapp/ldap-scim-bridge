@@ -22,6 +22,7 @@ scimTarget:
   path: "/scim/v2"
   token: "Bearer RRhtCL/VF9IYcmb3E9zaDo3rP6w3mZ3Ww3da7d2RDR8="
 mapping:
+  displayName: "displayName"
   userName: "uidNumber"
   externalId: "email"
   email: "email"
