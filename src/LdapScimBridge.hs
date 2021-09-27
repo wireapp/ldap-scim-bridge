@@ -218,7 +218,7 @@ instance Aeson.FromJSON Mapping where
     where
       -- The name that shows for this user in wire.
       mapDisplayName :: Text -> FieldMapping
-      mapDisplayName ldapFieldName = FieldMapping "userName" $
+      mapDisplayName ldapFieldName = FieldMapping "displayName" $
         \case
           [val] -> Right $ \usr -> usr {Scim.displayName = Just val}
           bad -> Left $ WrongNumberOfAttrValues ldapFieldName "1" (Prelude.length bad)
