@@ -1,7 +1,12 @@
 # Changelog
 
-`ldap-scim-bridge` uses [PVP Versioning][1].
+`ldap-scim-bridge` uses [PVP][1]-compatible versioning.
 The changelog is available [on GitHub][2].
+
+## 0.3
+
+- Better error logging. (#11)
+- Allow mapping the scim `displayName` attribute. (#14)
 
 ## 0.2
 
