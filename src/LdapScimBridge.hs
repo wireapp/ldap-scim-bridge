@@ -46,6 +46,7 @@ data LdapConf = LdapConf
     ldapDn :: Dn,
     ldapPassword :: Password,
     ldapSearch :: LdapSearch,
+    ldapFilterOnAttribute :: Maybe LdapFilterAttr,
     -- | anything from "Data.Text.Encoding".
     ldapCodec :: Codec,
     ldapDeleteOnAttribute :: Maybe LdapFilterAttr,
@@ -78,6 +79,7 @@ instance Aeson.FromJSON LdapConf where
     fdn :: Text <- obj Aeson..: "dn"
     fpassword :: String <- obj Aeson..: "password"
     fsearch :: LdapSearch <- obj Aeson..: "search"
+    ffilterOnAttribute :: Maybe LdapFilterAttr <- obj Aeson..:? "filterOnAttribute"
     fcodec :: Text <- obj Aeson..: "codec"
     fdeleteOnAttribute :: Maybe LdapFilterAttr <- obj Aeson..:? "deleteOnAttribute"
     fdeleteFromDirectory :: Maybe LdapSearch <- obj Aeson..:? "deleteFromDirectory"
@@ -102,6 +104,7 @@ instance Aeson.FromJSON LdapConf where
           ldapDn = Dn fdn,
           ldapPassword = Password $ ByteString.pack fpassword,
           ldapSearch = fsearch,
+          ldapFilterOnAttribute = ffilterOnAttribute,
           ldapCodec = vcodec,
           ldapDeleteOnAttribute = fdeleteOnAttribute,
           ldapDeleteFromDirectory = fdeleteFromDirectory
@@ -262,7 +265,10 @@ listLdapUsers :: LdapConf -> LdapSearch -> LdapResult [SearchEntry]
 listLdapUsers conf searchConf = Ldap.with (ldapHost conf) (ldapPort conf) $ \l -> do
   Ldap.bind l (ldapDn conf) (ldapPassword conf)
   let fltr = ldapObjectClassFilter . ldapSearchObjectClass $ searchConf
-  Ldap.search l (ldapSearchBase searchConf) mempty fltr mempty
+  let allfltr = case ldapFilterOnAttribute of
+                  Just attributeFilter -> fltr And attributeFilter
+                  Nothing -> fltr
+  Ldap.search l (ldapSearchBase searchConf) mempty allfltr mempty
 
 type User = Scim.User ScimTag
 
