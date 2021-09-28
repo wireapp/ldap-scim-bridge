@@ -8,6 +8,8 @@ ldapSource:
   search:
     base: "ou=People,dc=nodomain"
     objectClass: "account"
+    #memberOf: "team red"
+    #hairColor: "yellow"
   codec: "utf8"
 scimTarget:
   tls: false

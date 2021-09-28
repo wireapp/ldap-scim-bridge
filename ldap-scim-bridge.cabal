@@ -39,6 +39,7 @@ common common-options
                      , email-validate >=2.3.2.13 && <2.4
                      , string-conversions >=0.4.0.1 && <0.5
                      , servant-client >=0.18.3 && <0.19
+                     , unordered-containers
                      , servant-client-core >=0.18.3 && <0.19
                      , servant >=0.18.3 && <0.19
                      , http-types >=0.12.3 && <0.13
