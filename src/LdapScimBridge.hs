@@ -8,6 +8,7 @@ import qualified Data.Aeson as Aeson
 import qualified Data.Aeson.Encode.Pretty as Aeson
 import qualified Data.ByteString.Char8 as ByteString
 import qualified Data.Foldable as Foldable
+import qualified Data.HashMap.Lazy as HM
 import qualified Data.List
 import qualified Data.Map as Map
 import Data.String.Conversions (cs)
@@ -63,7 +64,9 @@ data LdapSearch = LdapSearch
   { -- | `$ slapcat | grep ^dn`, eg. @Dn "dc=nodomain"@.
     ldapSearchBase :: Dn,
     -- | eg. @"account"@
-    ldapSearchObjectClass :: Text
+    ldapSearchObjectClass :: Text,
+    -- | eg. @[LdapFilterAttr "memberOf" "team red", LdapFilterAttr "hairColor" "yellow"]
+    ldapSearchExtra :: [LdapFilterAttr]
   }
   deriving stock (Eq, Show)
 
@@ -79,7 +82,7 @@ instance Aeson.FromJSON LdapConf where
     fpassword :: String <- obj Aeson..: "password"
     fsearch :: LdapSearch <- obj Aeson..: "search"
     fcodec :: Text <- obj Aeson..: "codec"
-    fdeleteOnAttribute :: Maybe LdapFilterAttr <- obj Aeson..:? "deleteOnAttribute"
+    fdeleteOnAttribute :: Maybe LdapFilterAttr <- obj Aeson..:? "deleteOnAttribute" -- TODO: this can go into 'fdeleteFromDirectory'.
     fdeleteFromDirectory :: Maybe LdapSearch <- obj Aeson..:? "deleteFromDirectory"
 
     let vhost :: Host
@@ -117,7 +120,14 @@ instance Aeson.FromJSON LdapSearch where
   parseJSON = Aeson.withObject "LdapSearch" $ \obj -> do
     fbase :: Text <- obj Aeson..: "base"
     fobjectClass :: Text <- obj Aeson..: "objectClass"
-    pure $ LdapSearch (Dn fbase) fobjectClass
+
+    extra :: [LdapFilterAttr] <- do
+      let go :: (Text, Yaml.Value) -> Yaml.Parser LdapFilterAttr
+          go (key, val) = do
+            str <- Aeson.withText "val" pure val
+            pure $ LdapFilterAttr key str
+      go `mapM` HM.toList (HM.filterWithKey (\k _ -> k `notElem` ["base", "objectClass"]) obj)
+    pure $ LdapSearch (Dn fbase) fobjectClass extra
 
 data ScimConf = ScimConf
   { scimTls :: Bool,
@@ -143,7 +153,7 @@ data BridgeConf = BridgeConf
     mapping :: Mapping,
     logLevel :: Level
   }
-  deriving stock (Generic)
+  deriving stock (Show, Generic)
 
 instance Aeson.FromJSON Level where
   parseJSON "Trace" = pure Trace
@@ -255,14 +265,18 @@ instance Aeson.FromJSON Mapping where
 
 type LdapResult a = IO (Either LdapError a)
 
-ldapObjectClassFilter :: Text -> Filter
+ldapObjectClassFilter :: Text -> Filter -- TODO: inline?
 ldapObjectClassFilter = (Attr "objectClass" :=) . cs
+
+ldapFilterAttrToFilter :: LdapFilterAttr -> Filter -- TODO: inline?  replace LdapFilterAttr with `Attr` and `:=`?
+ldapFilterAttrToFilter (LdapFilterAttr key val) = Attr key := (cs val)
 
 listLdapUsers :: LdapConf -> LdapSearch -> LdapResult [SearchEntry]
 listLdapUsers conf searchConf = Ldap.with (ldapHost conf) (ldapPort conf) $ \l -> do
   Ldap.bind l (ldapDn conf) (ldapPassword conf)
-  let fltr = ldapObjectClassFilter . ldapSearchObjectClass $ searchConf
-  Ldap.search l (ldapSearchBase searchConf) mempty fltr mempty
+  let fltr :: Filter = ldapObjectClassFilter . ldapSearchObjectClass $ searchConf
+      allfltr :: Filter = And (fltr :| (ldapFilterAttrToFilter <$> ldapSearchExtra searchConf))
+  Ldap.search l (ldapSearchBase searchConf) mempty allfltr mempty
 
 type User = Scim.User ScimTag
 
