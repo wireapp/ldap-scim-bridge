@@ -209,7 +209,7 @@ newtype Mapping = Mapping {fromMapping :: Map Text [FieldMapping]}
 
 instance Aeson.FromJSON Mapping where
   parseJSON = Aeson.withObject "Mapping" $ \obj -> do
-    fdisplayName <- obj Aeson..: "displayName"
+    mfdisplayName <- obj Aeson..:? "displayName"
     fuserName <- obj Aeson..: "userName"
     fexternalId <- obj Aeson..: "externalId"
     mfemail <- obj Aeson..:? "email"
@@ -220,7 +220,7 @@ instance Aeson.FromJSON Mapping where
             go mp (k, b) = Map.alter (Just . maybe [b] (b :)) k mp
 
     pure . Mapping . listToMap . catMaybes $
-      [ Just (fdisplayName, mapDisplayName fdisplayName),
+      [ (\fdisplayName -> (fdisplayName, mapDisplayName fdisplayName)) <$> mfdisplayName,
         Just (fuserName, mapUserName fuserName),
         Just (fexternalId, mapExternalId fexternalId),
         (\femail -> (femail, mapEmail femail)) <$> mfemail
