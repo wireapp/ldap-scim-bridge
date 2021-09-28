@@ -126,7 +126,7 @@ instance Aeson.FromJSON LdapSearch where
           go (key, val) = do
             str <- Aeson.withText "val" pure val
             pure $ LdapFilterAttr key str
-      go `mapM` HM.toList obj
+      go `mapM` HM.toList (HM.filterWithKey (\k _ -> k `notElem` ["base", "objectClass"]) obj)
     pure $ LdapSearch (Dn fbase) fobjectClass extra
 
 data ScimConf = ScimConf
@@ -153,7 +153,7 @@ data BridgeConf = BridgeConf
     mapping :: Mapping,
     logLevel :: Level
   }
-  deriving stock (Generic)
+  deriving stock (Show, Generic)
 
 instance Aeson.FromJSON Level where
   parseJSON "Trace" = pure Trace
