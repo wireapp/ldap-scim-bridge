@@ -38,9 +38,17 @@ function install() {
 }
 
 function clear() {
-  # TODO: this both fails independently; I have not investigated.
-  sudo ldapdelete -D "cn=admin,dc=nodomain" -w geheim -H ldapi:/// DN "ou=People,dc=nodomain"
-  sudo ldapdelete -D "cn=admin,dc=nodomain" -w geheim -H ldapi:/// DN "cn=john,ou=People,dc=nodomain"
+  # TODO: sometimes we want to know if this fails, but only if it's
+  # other errors than "already exists".  or maybe we can test for
+  # existence before we attemp to delete, and then fail on all
+  # remaining errors?
+  sudo ldapdelete -D "cn=admin,dc=nodomain" -w geheim -H ldapi:/// "cn=notcreated,ou=NoPeople,dc=nodomain" || true
+  sudo ldapdelete -D "cn=admin,dc=nodomain" -w geheim -H ldapi:/// "cn=notcreated,ou=DeletedPeople,dc=nodomain" || true
+  sudo ldapdelete -D "cn=admin,dc=nodomain" -w geheim -H ldapi:/// "cn=uses123email,ou=People,dc=nodomain" || true
+  sudo ldapdelete -D "cn=admin,dc=nodomain" -w geheim -H ldapi:/// "cn=uses123email,ou=DeletedPeople,dc=nodomain" || true
+  sudo ldapdelete -D "cn=admin,dc=nodomain" -w geheim -H ldapi:/// "ou=People,dc=nodomain" || true
+  sudo ldapdelete -D "cn=admin,dc=nodomain" -w geheim -H ldapi:/// "ou=DeletedPeople,dc=nodomain" || true
+  sudo ldapdelete -D "cn=admin,dc=nodomain" -w geheim -H ldapi:/// "ou=NoPeople,dc=nodomain" || true
 }
 
 function scaffolding1() {
@@ -104,6 +112,8 @@ function assert_num_members() {
 
 # ----------------------------------------------------------------------
 # main
+
+clear
 
 scaffolding_spar
 echo WIRE_USERID: $WIRE_USERID
