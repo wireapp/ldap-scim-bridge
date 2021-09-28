@@ -4,7 +4,6 @@ objectClass: account
 objectClass: posixAccount
 objectClass: shadowAccount
 objectClass: extensibleObject
-objectClass: inetOrgPerson
 cn: uses123email
 uid: uses123email
 uidNumber: 10004
@@ -13,4 +12,3 @@ email: uses123@example.com
 homeDirectory: /home/me
 userPassword: notgonnatelleither
 loginShell: /bin/bash
-displayName: User Name
