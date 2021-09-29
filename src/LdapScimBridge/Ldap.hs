@@ -1,7 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# OPTIONS_GHC -Wno-orphans -Wno-missing-export-lists #-}
 
-module LdapScimBridge where
+module LdapScimBridge.Ldap where
 
 import Control.Exception (ErrorCall (ErrorCall), catch, throwIO)
 import qualified Data.Aeson as Aeson
@@ -18,10 +18,7 @@ import qualified Data.Yaml as Yaml
 import qualified GHC.Show
 import Ldap.Client as Ldap
 import LdapScimBridge.Config
-import LdapScimBridge.Ldap
-import LdapScimBridge.Logger
 import LdapScimBridge.Mapping
-import LdapScimBridge.Scim
 import qualified Network.HTTP.Client as HTTP
 import qualified Network.HTTP.Client.TLS as HTTP
 import Servant.API.ContentTypes (NoContent)
@@ -43,35 +40,20 @@ import qualified Web.Scim.Schema.Schema as Scim
 import qualified Web.Scim.Schema.User as Scim
 import qualified Web.Scim.Schema.User.Email as Scim
 
-parseCli :: IO BridgeConf
-parseCli = do
-  usage <- do
-    progName <- getProgName
-    let usage :: String -> ErrorCall
-        usage = ErrorCall . (<> help)
-        help =
-          cs . unlines . fmap cs $
-            [ "",
-              "",
-              "usage: " <> progName <> " <config.yaml>",
-              "see https://github.com/wireapp/ldap-scim-bridge for a sample config."
-            ]
-    pure usage
+type LdapResult a = IO (Either LdapError a)
 
-  getArgs >>= \case
-    [file] -> do
-      content <- ByteString.readFile file `catch` \(SomeException err) -> throwIO . usage $ show err
-      either (throwIO . usage . show) pure $ Yaml.decodeEither' content
-    bad -> throwIO . usage $ "bad number of arguments: " <> show bad
+ldapObjectClassFilter :: Text -> Filter -- TODO: inline?
+ldapObjectClassFilter = (Attr "objectClass" :=) . cs
 
-main :: IO ()
-main = do
-  myconf :: BridgeConf <- parseCli
-  lgr :: Logger <- mkLogger (logLevel myconf)
-  lgr Debug $ show (mapping myconf)
-  updateScimPeer lgr myconf `catch` logErrors lgr
-  where
-    logErrors :: Logger -> SomeException -> IO a
-    logErrors lgr (SomeException e) = do
-      lgr Fatal $ "uncaught exception: " <> show e
-      throwIO e
+ldapFilterAttrToFilter :: LdapFilterAttr -> Filter -- TODO: inline?  replace LdapFilterAttr with `Attr` and `:=`?
+ldapFilterAttrToFilter (LdapFilterAttr key val) = Attr key := (cs val)
+
+listLdapUsers :: LdapConf -> LdapSearch -> LdapResult [SearchEntry]
+listLdapUsers conf searchConf = Ldap.with (ldapHost conf) (ldapPort conf) $ \l -> do
+  Ldap.bind l (ldapDn conf) (ldapPassword conf)
+  let fltr :: Filter =
+        And
+          ( ldapObjectClassFilter (ldapSearchObjectClass searchConf)
+              :| (ldapFilterAttrToFilter <$> ldapSearchExtra searchConf)
+          )
+  Ldap.search l (ldapSearchBase searchConf) mempty fltr mempty

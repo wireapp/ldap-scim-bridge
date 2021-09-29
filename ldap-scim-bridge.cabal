@@ -110,6 +110,11 @@ library
   import:              common-options
   hs-source-dirs:      src
   exposed-modules:     LdapScimBridge
+                       LdapScimBridge.Config
+                       LdapScimBridge.Ldap
+                       LdapScimBridge.Logger
+                       LdapScimBridge.Mapping
+                       LdapScimBridge.Scim
 
 executable ldap-scim-bridge
   import:              common-options
