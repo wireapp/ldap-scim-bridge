@@ -3,6 +3,10 @@
 `ldap-scim-bridge` uses [PVP][1]-compatible versioning.
 The changelog is available [on GitHub][2].
 
+## 0.5
+
+- Various small fixes (#15)
+
 ## 0.4
 
 - Filter for arbitrary LDAP attributes (#16)
