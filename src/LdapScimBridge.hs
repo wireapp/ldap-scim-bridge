@@ -209,7 +209,7 @@ newtype Mapping = Mapping {fromMapping :: Map Text [FieldMapping]}
 
 instance Aeson.FromJSON Mapping where
   parseJSON = Aeson.withObject "Mapping" $ \obj -> do
-    fdisplayName <- obj Aeson..: "displayName"
+    mfdisplayName <- obj Aeson..:? "displayName"
     fuserName <- obj Aeson..: "userName"
     fexternalId <- obj Aeson..: "externalId"
     mfemail <- obj Aeson..:? "email"
@@ -220,7 +220,7 @@ instance Aeson.FromJSON Mapping where
             go mp (k, b) = Map.alter (Just . maybe [b] (b :)) k mp
 
     pure . Mapping . listToMap . catMaybes $
-      [ Just (fdisplayName, mapDisplayName fdisplayName),
+      [ (\fdisplayName -> (fdisplayName, mapDisplayName fdisplayName)) <$> mfdisplayName,
         Just (fuserName, mapUserName fuserName),
         Just (fexternalId, mapExternalId fexternalId),
         (\femail -> (femail, mapEmail femail)) <$> mfemail
@@ -246,6 +246,7 @@ instance Aeson.FromJSON Mapping where
           [val] -> Right $ \usr -> usr {Scim.externalId = Just val}
           bad -> Left $ WrongNumberOfAttrValues ldapFieldName "1" (Prelude.length bad)
 
+      mapEmail :: Text -> FieldMapping
       mapEmail ldapFieldName = FieldMapping "emails" $
         \case
           [] -> Right id
@@ -274,9 +275,12 @@ ldapFilterAttrToFilter (LdapFilterAttr key val) = Attr key := (cs val)
 listLdapUsers :: LdapConf -> LdapSearch -> LdapResult [SearchEntry]
 listLdapUsers conf searchConf = Ldap.with (ldapHost conf) (ldapPort conf) $ \l -> do
   Ldap.bind l (ldapDn conf) (ldapPassword conf)
-  let fltr :: Filter = ldapObjectClassFilter . ldapSearchObjectClass $ searchConf
-      allfltr :: Filter = And (fltr :| (ldapFilterAttrToFilter <$> ldapSearchExtra searchConf))
-  Ldap.search l (ldapSearchBase searchConf) mempty allfltr mempty
+  let fltr :: Filter =
+        And
+          ( ldapObjectClassFilter (ldapSearchObjectClass searchConf)
+              :| (ldapFilterAttrToFilter <$> ldapSearchExtra searchConf)
+          )
+  Ldap.search l (ldapSearchBase searchConf) mempty fltr mempty
 
 type User = Scim.User ScimTag
 
