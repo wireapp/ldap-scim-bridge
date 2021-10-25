@@ -6,8 +6,6 @@
 [![Stackage Nightly](http://stackage.org/package/ldap-scim-bridge/badge/nightly)](http://stackage.org/nightly/package/ldap-scim-bridge)
 [![AGPL-3.0-only license](https://img.shields.io/badge/license-AGPL--3.0--only-blue.svg)](LICENSE)
 
-## this is work in progress.  use at your own risk?
-
 ## intro
 
 This is a small command line tool to pull data from an LDAP server and
