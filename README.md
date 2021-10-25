@@ -9,9 +9,13 @@
 ## intro
 
 This is a small command line tool to pull data from an LDAP server and
-push it to a SCIM peer.  It supports fields `externalId`,
-`userName`, `displayName`, `emails`, in the `User` schema.  It may not
-support any other fields, and it does not support scim `Group`s.
+push it to a SCIM peer.  It is currently used in production togethre
+with [wire-server](https://github.com/wireapp/wire-server), but is
+designed as a more general tool.
+
+It supports fields `externalId`, `userName`, `displayName`, `emails`,
+in the `User` schema.  It may not support any other fields, and it
+does not support scim `Group`s.
 
 If you extend this to other fields, groups, or other use cases and setups, we
 would highly appreciate pull requests, tickets, or emails (no matter how half-baked).
