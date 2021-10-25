@@ -36,35 +36,7 @@ A working example can be found in `./examples/wire-server`.
 
 ## future work
 
-Support more SCIM attributes and extensions.
-Specifically, for
-[wire-server](https://github.com/wireapp/wire-server), we may want to
-add rich profiles:
-
-```
-      { ...,
-        "urn:wire:scim:schemas:profile:1.0": {
-          "richInfo": {
-            "version": 0,
-            "fields": [
-              {
-                "value": "hair color",
-                "type": "green"
-              },
-              {
-                "value": "title",
-                "type": "galactic overlord"
-              }
-            ]
-          }
-        },
-        "urn:ietf:params:scim:schemas:extension:wire:1.0:User": {
-          "hair color": "green",
-          "title": "galactic overlord"
-        },
-        ...
-      }
-```
+See https://github.com/wireapp/ldap-scim-bridge/issues
 
 ## further reading
 
