@@ -3,6 +3,10 @@
 `ldap-scim-bridge` uses [PVP][1]-compatible versioning.
 The changelog is available [on GitHub][2].
 
+## 0.6
+
+- Work on README (#20)
+
 ## 0.5
 
 - Various small fixes (#15)
