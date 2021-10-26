@@ -125,6 +125,8 @@ instance Aeson.FromJSON Mapping where
 ----------------------------------------------------------------------
 -- ScimTag
 
+-- | Fill in the parameters for hscim 'User' type with plausible defaults.  (You may want to
+-- touch this if you're using the library for something new.)
 data ScimTag
 
 instance Scim.UserTypes ScimTag where
