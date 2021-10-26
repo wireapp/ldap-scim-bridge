@@ -42,12 +42,25 @@ import qualified Web.Scim.Schema.User.Email as Scim
 -- start off with an empty scim record, and change it based on attributes we find that are
 -- listed in the mapping.  Mappigns can fail, eg. if there is more than one attribute value
 -- for the attribute mapping to externalId.
-newtype Mapping = Mapping {fromMapping :: Map Text [FieldMapping]}
-  deriving stock (Show)
+type Mapping = Mapping' Mapper
 
-data FieldMapping = FieldMapping
-  { fieldMappingLabel :: Text,
-    fieldMappingFun ::
+newtype Mapping' a = Mapping {fromMapping :: Map LdapKey [ScimKey a]}
+  deriving stock (Show, Eq)
+
+newtype LdapKey = LdapKey Text
+  deriving stock (Show, Eq, Ord)
+
+newtype LdapVal = LdapVal Text
+  deriving stock (Show, Eq, Ord)
+
+newtype ScimKey a = ScimKey (Text, a)
+  deriving stock (Show, Eq, Ord)
+
+-- | Function that takes 0 or more values stored under the same 'LdapKey' in an ldap
+-- 'SearchEntry', and updates a given scim user or produces an error.  We provide hard-wired
+-- 'Mapper's for some scim user fields (see below).
+newtype Mapper = Mapper
+  { fromMapper ::
       [Text] ->
       Either
         MappingError
@@ -57,73 +70,70 @@ data FieldMapping = FieldMapping
   }
 
 data MappingError
-  = MissingAttr Text
-  | WrongNumberOfAttrValues Text String Int
+  = WrongNumberOfAttrValues LdapKey String Int
   | CouldNotParseEmail Text String
   deriving stock (Eq, Show)
 
-instance Show FieldMapping where
-  show = show . fieldMappingLabel
+construct :: Mapping' () -> Mapping' Mapper
+construct (Mapping mp) = Mapping $ Map.mapWithKey go mp
+  where
+    go :: LdapKey -> [ScimKey ()] -> [ScimKey Mapper]
+    go k vs = go' k <$> vs
 
-instance Aeson.FromJSON Mapping where
+    go' :: LdapKey -> ScimKey () -> ScimKey Mapper
+    --
+    go' ldapKey (ScimKey ("displayName", ())) = ScimKey . ("displayName",) . Mapper $ \case
+      [val] -> Right $ \usr -> usr {Scim.displayName = Just val}
+      bad -> Left $ WrongNumberOfAttrValues ldapKey "1" (Prelude.length bad)
+    --
+    go' ldapKey (ScimKey ("userName", ())) = ScimKey . ("userName",) . Mapper $ \case
+      [val] -> Right $ \usr -> usr {Scim.userName = val}
+      bad -> Left $ WrongNumberOfAttrValues ldapKey "1" (Prelude.length bad)
+    --
+    go' ldapKey (ScimKey ("externalId", ())) = ScimKey . ("externalId",) . Mapper $ \case
+      [val] -> Right $ \usr -> usr {Scim.externalId = Just val}
+      bad -> Left $ WrongNumberOfAttrValues ldapKey "1" (Prelude.length bad)
+    --
+    go' ldapKey (ScimKey ("emails", ())) = ScimKey . ("emails",) . Mapper $ \case
+      [] -> Right id
+      [val] -> case Text.Email.Validate.validate (SC.cs val) of
+        Right email -> Right $ \usr ->
+          usr
+            { Scim.emails =
+                [Scim.Email Nothing (Scim.EmailAddress2 email) Nothing]
+            }
+        Left err -> Left $ CouldNotParseEmail val err
+      bad ->
+        Left $
+          WrongNumberOfAttrValues
+            ldapKey
+            "<=1 (with more than one email, which one should be primary?)"
+            (Prelude.length bad)
+    go' ldapKey (ScimKey (bad, ())) = ScimKey . ("emails",) . Mapper $ \case
+
+
+----------------------------------------------------------------------
+
+instance Aeson.FromJSON (Mapping' Text) where
   parseJSON = Aeson.withObject "Mapping" $ \obj -> do
     mfdisplayName <- obj Aeson..:? "displayName"
     fuserName <- obj Aeson..: "userName"
     fexternalId <- obj Aeson..: "externalId"
     mfemail <- obj Aeson..:? "email"
 
-    let listToMap :: [(Text, a)] -> Map Text [a]
+    let listToMap :: [(LdapKey, scimKey)] -> Map LdapKey [scimKey]
         listToMap = foldl' go mempty
           where
             go mp (k, b) = Map.alter (Just . maybe [b] (b :)) k mp
 
     pure . Mapping . listToMap . catMaybes $
-      [ (\fdisplayName -> (fdisplayName, mapDisplayName fdisplayName)) <$> mfdisplayName,
-        Just (fuserName, mapUserName fuserName),
-        Just (fexternalId, mapExternalId fexternalId),
-        (\femail -> (femail, mapEmail femail)) <$> mfemail
+      [ (\fdisplayName -> (LdapKey fdisplayName, ScimKey "displayName")) <$> mfdisplayName,
+        Just (LdapKey fuserName, ScimKey "userName"),
+        Just (LdapKey fexternalId, ScimKey "externalId"),
+        (\femail -> (LdapKey femail, ScimKey "email")) <$> mfemail
       ]
-    where
-      -- The name that shows for this user in wire.
-      mapDisplayName :: Text -> FieldMapping
-      mapDisplayName ldapFieldName = FieldMapping "displayName" $
-        \case
-          [val] -> Right $ \usr -> usr {Scim.displayName = Just val}
-          bad -> Left $ WrongNumberOfAttrValues ldapFieldName "1" (Prelude.length bad)
-
-      -- Really, not username, but handle.
-      mapUserName :: Text -> FieldMapping
-      mapUserName ldapFieldName = FieldMapping "userName" $
-        \case
-          [val] -> Right $ \usr -> usr {Scim.userName = val}
-          bad -> Left $ WrongNumberOfAttrValues ldapFieldName "1" (Prelude.length bad)
-
-      mapExternalId :: Text -> FieldMapping
-      mapExternalId ldapFieldName = FieldMapping "externalId" $
-        \case
-          [val] -> Right $ \usr -> usr {Scim.externalId = Just val}
-          bad -> Left $ WrongNumberOfAttrValues ldapFieldName "1" (Prelude.length bad)
-
-      mapEmail :: Text -> FieldMapping
-      mapEmail ldapFieldName = FieldMapping "emails" $
-        \case
-          [] -> Right id
-          [val] -> case Text.Email.Validate.validate (SC.cs val) of
-            Right email -> Right $ \usr ->
-              usr
-                { Scim.emails =
-                    [Scim.Email Nothing (Scim.EmailAddress2 email) Nothing]
-                }
-            Left err -> Left $ CouldNotParseEmail val err
-          bad ->
-            Left $
-              WrongNumberOfAttrValues
-                ldapFieldName
-                "<=1 (with more than one email, which one should be primary?)"
-                (Prelude.length bad)
 
 ----------------------------------------------------------------------
--- ScimTag
 
 -- | Fill in the parameters for hscim 'User' type with plausible defaults.  (You may want to
 -- touch this if you're using the library for something new.)
