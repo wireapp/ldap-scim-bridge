@@ -52,7 +52,7 @@ ldapToScim conf entry@(SearchEntry _ attrs) = (entry,) <$> Foldable.foldl' go (R
       Just fieldMappings -> foldl' (go' vals) scimval fieldMappings
 
     go' :: [ByteString] -> m User -> FieldMapping -> m User
-    go' vals scimval (FieldMapping _ f) = case (scimval, f (codec <$> vals)) of
+    go' vals scimval (FieldMapping _ (Mapper f)) = case (scimval, f (codec <$> vals)) of
       (Right scimusr, Right f') -> Right (f' scimusr)
       (Right _, Left err) -> Left [(entry, err)]
       (Left errs, Right _) -> Left errs
