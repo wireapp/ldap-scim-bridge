@@ -325,8 +325,12 @@ connectScim lgr conf = (`catch` logErrors) $ do
         if scimTls conf
           then HTTP.tlsManagerSettings
           else HTTP.defaultManagerSettings
+      schema =
+        if scimTls conf
+          then Https
+          else Http
   manager <- HTTP.newManager settings
-  let base = BaseUrl Http (scimHost conf) (scimPort conf) (scimPath conf)
+  let base = BaseUrl schema (scimHost conf) (scimPort conf) (scimPath conf)
   pure $ mkClientEnv manager base
   where
     logErrors (SomeException e) = do
