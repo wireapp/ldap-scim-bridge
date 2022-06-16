@@ -43,10 +43,11 @@ A working example can be found in `./examples/wire-server`.
 If you have gotten here as a
 [wire-server](https://github.com/wireapp/wire-server) administrator
 and want to use this to populate your teams, you can use the docker
-image we're building from this repo:
+image we're building from this repo (append version with `:` if you
+want to pin it):
 
 ```sh
-docker pull quay.io/wire/ldap-scim-bridge:0.5
+docker pull quay.io/wire/ldap-scim-bridge
 ```
 
 You need to create a config file that contains your setup.  If in doubt, you can start with [this example](./examples/wire-server/conf1.yaml), or [this one](./examples/wire-server/conf2.yaml).  Name the file `config.yaml` and place it into `/config-path`.  Let's say you want to work on release 0.5.  (You can check if there is a `:latest`, but at the time of writing this paragraph, we still have to add that.)
@@ -54,7 +55,7 @@ You need to create a config file that contains your setup.  If in doubt, you can
 ```sh
 docker run -it --network=host \
   --mount type=bind,src=/config-path,target=/mnt \
-  quay.io/wire/ldap-scim-bridge:0.5 \
+  quay.io/wire/ldap-scim-bridge \
   ldap-scim-bridge /mnt/config.yaml
 ```
 
@@ -68,7 +69,7 @@ The connection to the LDAP source is TLS-encrypted.  If you need to add trusted 
 docker run -it --network=host \
   --mount type=bind,src=/config-path,target=/mnt \
   --mount type=bind,src=/etc/ssl/certs,target=/etc/ssl/certs \
-  quay.io/wire/ldap-scim-bridge:0.5 \
+  quay.io/wire/ldap-scim-bridge \
   ldap-scim-bridge /mnt/config.yaml
 ```
 
