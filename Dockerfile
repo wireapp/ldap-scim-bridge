@@ -14,6 +14,6 @@ RUN cabal v2-build --only-dependencies -j4
 
 # Add and Install Application Code
 COPY . /opt/ldap-scim-bridge
-RUN cabal v2-install 
+RUN cabal v2-install
 
 CMD ["ldap-scim-bridge"]
