@@ -3,6 +3,10 @@
 `ldap-scim-bridge` uses [PVP][1]-compatible versioning.
 The changelog is available [on GitHub][2].
 
+## 0.7
+
+- Fix TLS handshake to scim server (#23)
+
 ## 0.6
 
 - Work on README (#20)
