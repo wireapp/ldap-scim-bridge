@@ -1,4 +1,4 @@
-FROM haskell:8.8.3-buster
+FROM haskell:9
 
 WORKDIR /opt/ldap-scim-bridge
 
