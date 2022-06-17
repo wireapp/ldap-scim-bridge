@@ -3,6 +3,14 @@
 `ldap-scim-bridge` uses [PVP][1]-compatible versioning.
 The changelog is available [on GitHub][2].
 
+## 0.8
+
+- Fix repo home url in cabal file.
+- Tweak README.
+- Maintainer script.
+- Bump parent docker image.
+- Tag docker image as `latest` on release.
+
 ## 0.7
 
 - Fix TLS handshake to scim server (#23)
