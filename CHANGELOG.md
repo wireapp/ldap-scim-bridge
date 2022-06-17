@@ -37,4 +37,4 @@ The changelog is available [on GitHub][2].
 * Initially created.
 
 [1]: https://pvp.haskell.org
-[2]: https://github.com/fisx/ldap-scim-bridge/releases
+[2]: https://github.com/wireapp/ldap-scim-bridge/releases
