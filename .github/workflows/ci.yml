@@ -71,9 +71,7 @@ jobs:
       uses: redhat-actions/push-to-registry@v2
       with:
         image: ${{ steps.build-image.outputs.image }}
-        tags:
-        - ${{ steps.build-image.outputs.tags }}
-        - 'latest'
+        tags: ${{ steps.build-image.outputs.tags }} 'latest'
         registry: quay.io/wire
         username: wire+ldapscimbridge
         password: ${{ secrets.REGISTRY_PASSWORD }}
