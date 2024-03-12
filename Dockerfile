@@ -4,6 +4,7 @@ WORKDIR /opt/ldap-scim-bridge
 
 # Add just the .cabal file to capture dependencies
 COPY ./ldap-scim-bridge.cabal /opt/ldap-scim-bridge/ldap-scim-bridge.cabal
+COPY ./cabal.project /opt/ldap-scim-bridge/cabal.project
 
 RUN cabal v2-update
 
