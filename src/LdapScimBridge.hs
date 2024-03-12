@@ -6,6 +6,7 @@ module LdapScimBridge where
 import Control.Exception (ErrorCall (ErrorCall), catch, throwIO)
 import qualified Data.Aeson as Aeson
 import qualified Data.Aeson.Encode.Pretty as Aeson
+import qualified Data.Aeson.Key as K
 import qualified Data.Aeson.KeyMap as KM
 import qualified Data.ByteString.Char8 as ByteString
 import qualified Data.Foldable as Foldable
@@ -37,7 +38,6 @@ import qualified Web.Scim.Schema.Meta as Scim
 import qualified Web.Scim.Schema.Schema as Scim
 import qualified Web.Scim.Schema.User as Scim
 import qualified Web.Scim.Schema.User.Email as Scim
-import qualified Data.Aeson.Key as K
 
 data LdapConf = LdapConf
   { -- | eg. @Ldap.Tls (host conf) Ldap.defaultTlsSettings@
