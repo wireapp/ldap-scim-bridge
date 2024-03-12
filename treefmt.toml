@@ -11,3 +11,12 @@ includes = [ "*.cabal" ]
 excludes = [
   "dist-newstyle/"
 ]
+
+[formatter.haskell]
+command = "ormolu"
+options = [
+  "--mode", "inplace",
+  "--check-idempotence",
+]
+includes = ["*.hs"]
+excludes = []
