@@ -1,0 +1,6 @@
+source-repository-package
+  type: git
+  location: https://gitlab.com/leif.battermann/tinylog.git
+  tag: c570eaec033766b49ed394feb9638bfc0bd247e2
+
+packages: ldap-scim-bridge.cabal

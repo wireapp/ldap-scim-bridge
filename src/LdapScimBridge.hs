@@ -6,9 +6,9 @@ module LdapScimBridge where
 import Control.Exception (ErrorCall (ErrorCall), catch, throwIO)
 import qualified Data.Aeson as Aeson
 import qualified Data.Aeson.Encode.Pretty as Aeson
+import qualified Data.Aeson.KeyMap as KM
 import qualified Data.ByteString.Char8 as ByteString
 import qualified Data.Foldable as Foldable
-import qualified Data.HashMap.Lazy as HM
 import qualified Data.List
 import qualified Data.Map as Map
 import Data.String.Conversions (cs)
@@ -37,6 +37,7 @@ import qualified Web.Scim.Schema.Meta as Scim
 import qualified Web.Scim.Schema.Schema as Scim
 import qualified Web.Scim.Schema.User as Scim
 import qualified Web.Scim.Schema.User.Email as Scim
+import qualified Data.Aeson.Key as K
 
 data LdapConf = LdapConf
   { -- | eg. @Ldap.Tls (host conf) Ldap.defaultTlsSettings@
@@ -122,11 +123,11 @@ instance Aeson.FromJSON LdapSearch where
     fobjectClass :: Text <- obj Aeson..: "objectClass"
 
     extra :: [LdapFilterAttr] <- do
-      let go :: (Text, Yaml.Value) -> Yaml.Parser LdapFilterAttr
+      let go :: (KM.Key, Yaml.Value) -> Yaml.Parser LdapFilterAttr
           go (key, val) = do
             str <- Aeson.withText "val" pure val
-            pure $ LdapFilterAttr key str
-      go `mapM` HM.toList (HM.filterWithKey (\k _ -> k `notElem` ["base", "objectClass"]) obj)
+            pure $ LdapFilterAttr (K.toText key) str
+      go `mapM` KM.toList (KM.filterWithKey (\k _ -> k `notElem` ["base", "objectClass"]) obj)
     pure $ LdapSearch (Dn fbase) fobjectClass extra
 
 data ScimConf = ScimConf
