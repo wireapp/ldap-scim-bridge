@@ -14,9 +14,9 @@ jobs:
     runs-on: ubuntu-18.04
     strategy:
       matrix:
-        cabal: ["2.4"]
+        cabal: ["3.10"]
         ghc:
-          - "8.8.3"
+          - "9.4.8"
     if: "!startsWith(github.ref, 'refs/tags/v')"
 
     steps:
@@ -42,7 +42,7 @@ jobs:
 
     - name: Test
       run: |
-        echo 'No tests'
+        cabal v2-test --test-show-details=always --test-option=--color
 
   publish:
     # needs : build
