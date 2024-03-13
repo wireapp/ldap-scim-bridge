@@ -87,9 +87,7 @@ instance Aeson.FromJSON LdapConf where
     fdeleteFromDirectory :: Maybe LdapSearch <- obj Aeson..:? "deleteFromDirectory"
 
     let vhost :: Host
-        vhost = case ftls of
-          True -> Ldap.Tls fhost Ldap.defaultTlsSettings
-          False -> Ldap.Plain fhost
+        vhost = if ftls then Ldap.Tls fhost Ldap.defaultTlsSettings else Ldap.Plain fhost
 
         vport :: PortNumber
         vport = fromIntegral fport
@@ -273,7 +271,7 @@ ldapObjectClassFilter :: Text -> Filter -- TODO: inline?
 ldapObjectClassFilter = (Attr "objectClass" :=) . cs
 
 ldapFilterAttrToFilter :: LdapFilterAttr -> Filter -- TODO: inline?  replace LdapFilterAttr with `Attr` and `:=`?
-ldapFilterAttrToFilter (LdapFilterAttr key val) = Attr key := (cs val)
+ldapFilterAttrToFilter (LdapFilterAttr key val) = Attr key := cs val
 
 listLdapUsers :: LdapConf -> LdapSearch -> LdapResult [SearchEntry]
 listLdapUsers conf searchConf = Ldap.with (ldapHost conf) (ldapPort conf) $ \l -> do
@@ -367,7 +365,7 @@ updateScimPeer lgr conf = do
     -- delete
     lgr Info "[delete: started]"
     let ldapDeleteesAttr = filter (isDeletee (ldapSource conf)) ldaps
-    ldapDeleteesDirectory :: [SearchEntry] <- case (ldapDeleteFromDirectory (ldapSource conf)) of
+    ldapDeleteesDirectory :: [SearchEntry] <- case ldapDeleteFromDirectory (ldapSource conf) of
       Just (searchConf :: LdapSearch) ->
         either (throwIO . ErrorCall . show) pure =<< listLdapUsers (ldapSource conf) searchConf
       Nothing ->
