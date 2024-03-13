@@ -215,7 +215,7 @@ instance Aeson.FromJSON Mapping where
     fuserName <- obj Aeson..: "userName"
     fexternalId <- obj Aeson..: "externalId"
     mfemail <- obj Aeson..:? "email"
-    mfrole <- obj Aeson..:? "role"
+    mfrole <- obj Aeson..:? "roles"
 
     let listToMap :: [(Text, a)] -> Map Text [a]
         listToMap = foldl' go mempty
@@ -226,7 +226,8 @@ instance Aeson.FromJSON Mapping where
       [ (\fdisplayName -> (fdisplayName, mapDisplayName fdisplayName)) <$> mfdisplayName,
         Just (fuserName, mapUserName fuserName),
         Just (fexternalId, mapExternalId fexternalId),
-        (\femail -> (femail, mapEmail femail)) <$> mfemail
+        (\femail -> (femail, mapEmail femail)) <$> mfemail,
+        (\frole -> (frole, mapRole frole)) <$> mfrole
       ]
     where
       -- The name that shows for this user in wire.
@@ -268,7 +269,11 @@ instance Aeson.FromJSON Mapping where
                 (Prelude.length bad)
 
       mapRole :: Text -> FieldMapping
-      mapRole = undefined
+      mapRole ldapFieldName = FieldMapping "roles" $
+        \case
+          [] -> Right id
+          [val] -> Right $ \usr -> usr {Scim.roles = [val]}
+          bad -> Left $ WrongNumberOfAttrValues ldapFieldName "1" (Prelude.length bad)
 
 type LdapResult a = IO (Either LdapError a)
 
