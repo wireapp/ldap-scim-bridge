@@ -215,6 +215,7 @@ instance Aeson.FromJSON Mapping where
     fuserName <- obj Aeson..: "userName"
     fexternalId <- obj Aeson..: "externalId"
     mfemail <- obj Aeson..:? "email"
+    mfrole <- obj Aeson..:? "role"
 
     let listToMap :: [(Text, a)] -> Map Text [a]
         listToMap = foldl' go mempty
@@ -265,6 +266,9 @@ instance Aeson.FromJSON Mapping where
                 ldapFieldName
                 "<=1 (with more than one email, which one should be primary?)"
                 (Prelude.length bad)
+
+      mapRole :: Text -> FieldMapping
+      mapRole = undefined
 
 type LdapResult a = IO (Either LdapError a)
 
