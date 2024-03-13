@@ -34,6 +34,7 @@ export SPAR_URL=http://localhost:8088
 export BRIG_URL=http://localhost:8082
 export GALLEY_URL=http://localhost:8085
 
+# FUTUREWORK: install ldap with nix (https://nixos.wiki/wiki/OpenLDAP) or docker
 function install() {
   sudo apt-get install ldapscripts ldap-utils slapd
 }
