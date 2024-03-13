@@ -38,6 +38,7 @@ import qualified Web.Scim.Schema.Meta as Scim
 import qualified Web.Scim.Schema.Schema as Scim
 import qualified Web.Scim.Schema.User as Scim
 import qualified Web.Scim.Schema.User.Email as Scim
+import Prelude
 
 data LdapConf = LdapConf
   { -- | eg. @Ldap.Tls (host conf) Ldap.defaultTlsSettings@

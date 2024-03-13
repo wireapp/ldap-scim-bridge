@@ -118,16 +118,16 @@ function assert_num_members() {
 clear
 
 scaffolding_spar
-echo WIRE_USERID: $WIRE_USERID
-echo WIRE_TEAMID: $WIRE_TEAMID
-echo SCIM_TOKEN: $SCIM_TOKEN
+echo WIRE_USERID: "$WIRE_USERID"
+echo WIRE_TEAMID: "$WIRE_TEAMID"
+echo SCIM_TOKEN: "$SCIM_TOKEN"
 
 scaffolding1
 sudo slapcat
-cabal run ldap-scim-bridge $BRIDGE_CONF1
+cabal run ldap-scim-bridge "$BRIDGE_CONF1"
 assert_num_members 2 "user could not be created!"
 
 scaffolding2
 sudo slapcat
-cabal run ldap-scim-bridge $BRIDGE_CONF2
+cabal run ldap-scim-bridge "$BRIDGE_CONF2"
 assert_num_members 1 "user could not be deleted!"
