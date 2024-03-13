@@ -17,6 +17,9 @@ pkgs.mkShellNoCC rec {
     (haskell.lib.justStaticExecutables haskellPackages.cabal-fmt)
     nixpkgs-fmt
     treefmt
+    shellcheck
+    jq
+    gcc
   ];
 
   # Ensure that libz.so and other libraries are available to TH

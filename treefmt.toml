@@ -20,3 +20,7 @@ options = [
 ]
 includes = ["*.hs"]
 excludes = []
+
+[formatter.shellcheck]
+command = "shellcheck"
+includes = ["*.sh"]

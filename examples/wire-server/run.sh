@@ -28,9 +28,10 @@ export WIRE_TEAMID
 export SCIM_TOKEN
 export SCIM_TOKEN_ID
 export SCIM_TOKEN_FULL
-export WIRE_SERVER_PATH=~/src/wire-server
+export WIRE_SAMLIDP
+export WIRE_SERVER_PATH="${WIRE_SERVER_PATH:=~/src/wire-server}"
 export SPAR_URL=http://localhost:8088
-export BRIG_URL=http://localhost:8088
+export BRIG_URL=http://localhost:8082
 export GALLEY_URL=http://localhost:8085
 
 function install() {
@@ -62,23 +63,23 @@ function scaffolding2() {
 
 function scaffolding_spar() {
   if ( curl -s $BRIG_URL/i/status ); then
-    WIRE_USER=$(${WIRE_SERVER_PATH}/deploy/services-demo/create_test_team_admins.sh -c)
-    WIRE_USERID=$(echo $WIRE_USER | sed 's/^\([^,]\+\),\([^,]\+\),\([^,]\+\)$/\1/')
-    WIRE_PASSWD=$(echo $WIRE_USER | sed 's/^\([^,]\+\),\([^,]\+\),\([^,]\+\)$/\3/')
-    WIRE_TEAMID=$(curl -s -H'content-type: application/json' -H'Z-User: '"${WIRE_USERID}" http://localhost:8082/self | jq .team | xargs echo)
+    WIRE_USER=$("${WIRE_SERVER_PATH}"/hack/bin/create_test_team_admins.sh -c)
+    WIRE_USERID=$(echo "$WIRE_USER" | sed 's/^\([^,]\+\),\([^,]\+\),\([^,]\+\)$/\1/')
+    WIRE_PASSWD=$(echo "$WIRE_USER" | sed 's/^\([^,]\+\),\([^,]\+\),\([^,]\+\)$/\3/')
+    WIRE_TEAMID=$(curl -s -H'content-type: application/json' -H'Z-User: '"${WIRE_USERID}" "$BRIG_URL/self" | jq .team | xargs echo)
 
     # create a saml idp (if we don't, users will not be created, but invitated, which would make the following more awkward to write down).
     curl -s -X PUT \
       --header "Z-User: $WIRE_USERID" \
       --header 'Content-Type: application/json;charset=utf-8' \
       -d '{"status": "enabled"}' \
-      ${GALLEY_URL}/i/teams/$WIRE_TEAMID/features/sso >/dev/null
-    export WIRE_SAMLIDP=$(curl -X POST \
+      ${GALLEY_URL}/i/teams/"$WIRE_TEAMID"/features/sso >/dev/null
+    WIRE_SAMLIDP=$(curl -X POST \
       --header "Z-User: $WIRE_USERID" \
       --header 'Content-Type: application/xml;charset=utf-8' \
-      -d "<EntityDescriptor xmlns:samlp=\"urn:oasis:names:tc:SAML:2.0:protocol\" xmlns:samla=\"urn:oasis:names:tc:SAML:2.0:assertion\" xmlns:samlm=\"urn:oasis:names:tc:SAML:2.0:metadata\" xmlns:ds=\"http://www.w3.org/2000/09/xmldsig#\" ID=\"_0c29ba62-a541-11e8-8042-873ef87bdcba\" entityID=\"https://issuer.net/_"`uuid`"\" xmlns=\"urn:oasis:names:tc:SAML:2.0:metadata\"><IDPSSODescriptor protocolSupportEnumeration=\"urn:oasis:names:tc:SAML:2.0:protocol\"><KeyDescriptor use=\"signing\"><ds:KeyInfo><ds:X509Data><ds:X509Certificate>MIIBOTCBxKADAgECAg4TIFmNatMeqaAE8BWQBTANBgkqhkiG9w0BAQsFADAAMB4XDTIxMDkwMzEzMjUyMVoXDTQxMDgyOTEzMjUyMVowADB6MA0GCSqGSIb3DQEBAQUAA2kAMGYCYQDPAqTk/nq2B/J0WH2FtiRh6nB8BvOc6M7d4K2KV0kXrePjeRPh+cDDf9mYrpntnjBa2LGAc0S4gjUXdvnt1Fxg2YYXYJ+N7+jxV36jUng7cGz1tEOB5RIj28Mv8/eXnjUCAREwDQYJKoZIhvcNAQELBQADYQBaIWDz832gg5jZPIy5z0CV1rWbUQALy6SUodWMezbzVF86hycUvZqAzd5Pir8084Mk/6FQK2Hbbml2LaHS8JnZpYxlgNIRNNonzScAUFclDi4NNmcxPuB6ycu9kK/0l+A=</ds:X509Certificate></ds:X509Data></ds:KeyInfo></KeyDescriptor><SingleSignOnService Binding=\"urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST\" Location=\"https://requri.net/fb9e3c14-25eb-482a-8df3-c71e3e83110b\"/></IDPSSODescriptor></EntityDescriptor>" \
+      -d "<EntityDescriptor xmlns:samlp=\"urn:oasis:names:tc:SAML:2.0:protocol\" xmlns:samla=\"urn:oasis:names:tc:SAML:2.0:assertion\" xmlns:samlm=\"urn:oasis:names:tc:SAML:2.0:metadata\" xmlns:ds=\"http://www.w3.org/2000/09/xmldsig#\" ID=\"_0c29ba62-a541-11e8-8042-873ef87bdcba\" entityID=\"https://issuer.net/_$(uuidgen)\" xmlns=\"urn:oasis:names:tc:SAML:2.0:metadata\"><IDPSSODescriptor protocolSupportEnumeration=\"urn:oasis:names:tc:SAML:2.0:protocol\"><KeyDescriptor use=\"signing\"><ds:KeyInfo><ds:X509Data><ds:X509Certificate>MIIBOTCBxKADAgECAg4TIFmNatMeqaAE8BWQBTANBgkqhkiG9w0BAQsFADAAMB4XDTIxMDkwMzEzMjUyMVoXDTQxMDgyOTEzMjUyMVowADB6MA0GCSqGSIb3DQEBAQUAA2kAMGYCYQDPAqTk/nq2B/J0WH2FtiRh6nB8BvOc6M7d4K2KV0kXrePjeRPh+cDDf9mYrpntnjBa2LGAc0S4gjUXdvnt1Fxg2YYXYJ+N7+jxV36jUng7cGz1tEOB5RIj28Mv8/eXnjUCAREwDQYJKoZIhvcNAQELBQADYQBaIWDz832gg5jZPIy5z0CV1rWbUQALy6SUodWMezbzVF86hycUvZqAzd5Pir8084Mk/6FQK2Hbbml2LaHS8JnZpYxlgNIRNNonzScAUFclDi4NNmcxPuB6ycu9kK/0l+A=</ds:X509Certificate></ds:X509Data></ds:KeyInfo></KeyDescriptor><SingleSignOnService Binding=\"urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST\" Location=\"https://requri.net/fb9e3c14-25eb-482a-8df3-c71e3e83110b\"/></IDPSSODescriptor></EntityDescriptor>" \
       ${SPAR_URL}/identity-providers | jq .)
-    if [ "$(echo $WIRE_SAMLIDP | jq .id)" == "null" ]; then
+    if [ "$(echo "$WIRE_SAMLIDP" | jq .id)" == "null" ]; then
         echo "could not create idp: $WIRE_SAMLIDP"
         false
     fi
@@ -87,24 +88,25 @@ function scaffolding_spar() {
     SCIM_TOKEN_FULL=$(curl -X POST \
       --header "Z-User: $WIRE_USERID" \
       --header 'Content-Type: application/json;charset=utf-8' \
-      -d '{ "description": "test '"`date`"'", "password": "'"$WIRE_PASSWD"'" }' \
+      -d '{ "description": "test '"$(date)"'", "password": "'"$WIRE_PASSWD"'" }' \
       ${SPAR_URL}/scim/auth-tokens)
-    SCIM_TOKEN_ID=$(echo $SCIM_TOKEN_FULL | jq -r .info.id)
-    SCIM_TOKEN=$(echo $SCIM_TOKEN_FULL | jq -r .token)
-    ESCAPED_SCIM_TOKEN=$(echo $SCIM_TOKEN | sed 's/\+/\\\+/g;s_/_\\/_g;s/\=/\\=/g')
+    SCIM_TOKEN_ID=$(echo "$SCIM_TOKEN_FULL" | jq -r .info.id)
+    SCIM_TOKEN=$(echo "$SCIM_TOKEN_FULL" | jq -r .token)
+    ESCAPED_SCIM_TOKEN=$(echo "$SCIM_TOKEN" | sed 's/\+/\\\+/g;s_/_\\/_g;s/\=/\\=/g')
     sed -i 's/^  token: \"Bearer .*$/  token: \"Bearer '"${ESCAPED_SCIM_TOKEN}"'"/' $BRIDGE_CONF1
     sed -i 's/^  token: \"Bearer .*$/  token: \"Bearer '"${ESCAPED_SCIM_TOKEN}"'"/' $BRIDGE_CONF2
   else
     # no wire-server running?
-    echo "${WIRE_SERVER_PATH}/deploy/dockerephemeral/run.sh"
-    echo "${WIRE_SERVER_PATH}/services/start-services-only.sh"
+    echo "start wire service by going to the wire-server directory and running:"
+    echo "./deploy/dockerephemeral/run.sh"
+    echo "make cr"
     false
   fi
 }
 
 function assert_num_members() {
-    sleep 2 # mitigate race conditions (increase the time if this function fails)
-    if [ "$(curl -s -H'content-type: application/json' -H'Z-User: '"${WIRE_USERID}" http://localhost:8085/teams/${WIRE_TEAMID}/members | jq '.members|length')" != "$1" ]; then
+    sleep 22 # mitigate race conditions (increase the time if this function fails)
+    if [ "$(curl -s -H'content-type: application/json' -H'Z-User: '"${WIRE_USERID}" http://localhost:8085/teams/"${WIRE_TEAMID}"/members | jq '.members|length')" != "$1" ]; then
       echo "$2"
       false
     fi
