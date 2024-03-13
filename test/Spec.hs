@@ -55,8 +55,9 @@ testMapping displayName userName externalId email = do
             x509Certificates = [],
             extra = NoUserExtra
           }
-  let actualScimUser = ldapToScim conf searchEntry
-  actualScimUser `shouldBe` Right (searchEntry, expectedScimUser)
+  let Right (actualSearchEntry, actualScimUser) = ldapToScim conf searchEntry
+  actualSearchEntry `shouldBe` searchEntry
+  actualScimUser `shouldBe` expectedScimUser
 
 confYaml :: ByteString
 confYaml =
