@@ -12,52 +12,84 @@ import Web.Scim.Schema.Meta as Scim
 import Web.Scim.Schema.Schema as Scim
 import Web.Scim.Schema.User as Scim
 import Web.Scim.Schema.User.Email as Scim
+import Data.Function ((&))
+import Data.Maybe (maybeToList)
 
 main :: IO ()
 main = hspec $ do
   describe "LdapScimBridge" $ do
     it "map displayName userName externalId and email" $ do
-      testMapping "George" "george" "george@nodomain" "george@nodomain"
+      let displayName = "John Doe"
+      let userName = "jdoe"
+      let externalId = "jdoe@nodomain"
+      let email = "jdoe@nodomain"
+      let searchEntry =
+            searchEntryEmpty
+              & addAttr "displayName" displayName
+              & addAttr "uidNumber" userName
+              & addAttr "email" email
 
-testMapping :: Text -> Text -> Text -> Text -> IO ()
-testMapping displayName userName externalId email = do
-  let [local, domain] = splitOn "@" email
-  conf <- Yaml.decodeThrow confYaml
-  let searchEntry =
-        SearchEntry
-          (Dn "123")
-          [ (Attr "displayName", [cs displayName]),
-            (Attr "uidNumber", [cs userName]),
-            (Attr "email", [cs email])
-          ]
-  let expectedScimUser =
-        Scim.User
-          { schemas = [User20],
-            userName = userName,
-            externalId = Just externalId,
-            name = Nothing,
-            displayName = Just displayName,
-            nickName = Nothing,
-            profileUrl = Nothing,
-            title = Nothing,
-            userType = Nothing,
-            preferredLanguage = Nothing,
-            locale = Nothing,
-            active = Nothing,
-            password = Nothing,
-            emails = [Email {typ = Nothing, Scim.value = EmailAddress2 {unEmailAddress = unsafeEmailAddress (cs local) (cs domain)}, primary = Nothing}],
-            phoneNumbers = [],
-            ims = [],
-            photos = [],
-            addresses = [],
-            entitlements = [],
-            roles = [],
-            x509Certificates = [],
-            extra = NoUserExtra
-          }
-  let Right (actualSearchEntry, actualScimUser) = ldapToScim conf searchEntry
-  actualSearchEntry `shouldBe` searchEntry
-  actualScimUser `shouldBe` expectedScimUser
+      let expectedScimUser = mkScimUser displayName userName externalId email Nothing
+
+      conf <- Yaml.decodeThrow confYaml
+      let Right (actualSearchEntry, actualScimUser) = ldapToScim conf searchEntry
+      actualSearchEntry `shouldBe` searchEntry
+      actualScimUser `shouldBe` expectedScimUser
+
+    it "map role" $ do
+      let displayName = "John Doe"
+      let userName = "jdoe"
+      let externalId = "jdoe@nodomain"
+      let email = "jdoe@nodomain"
+      let role = "partner"
+      let searchEntry =
+            searchEntryEmpty
+              & addAttr "displayName" displayName
+              & addAttr "uidNumber" userName
+              & addAttr "email" email
+              & addAttr "employeeType" role
+
+      let expectedScimUser = mkScimUser displayName userName externalId email (Just role)
+
+      conf <- Yaml.decodeThrow confYaml
+      let Right (actualSearchEntry, actualScimUser) = ldapToScim conf searchEntry
+      actualSearchEntry `shouldBe` searchEntry
+      actualScimUser `shouldBe` expectedScimUser
+
+searchEntryEmpty :: SearchEntry
+searchEntryEmpty = SearchEntry (Dn "") []
+
+addAttr :: Text -> Text -> SearchEntry -> SearchEntry
+addAttr key value (SearchEntry dn attrs) = SearchEntry dn ((Attr key, [cs value]) : attrs)
+
+mkScimUser :: Text -> Text -> Text -> Text -> Maybe Text -> Scim.User ScimTag
+mkScimUser displayName userName externalId email mRole =
+  Scim.User
+    { schemas = [User20],
+      userName = userName,
+      externalId = Just externalId,
+      name = Nothing,
+      displayName = Just displayName,
+      nickName = Nothing,
+      profileUrl = Nothing,
+      title = Nothing,
+      userType = Nothing,
+      preferredLanguage = Nothing,
+      locale = Nothing,
+      active = Nothing,
+      password = Nothing,
+      emails = [Email {typ = Nothing, Scim.value = EmailAddress2 {unEmailAddress = unsafeEmailAddress (cs local) (cs domain)}, primary = Nothing}],
+      phoneNumbers = [],
+      ims = [],
+      photos = [],
+      addresses = [],
+      entitlements = [],
+      roles = maybeToList mRole,
+      x509Certificates = [],
+      extra = NoUserExtra
+    }
+  where
+    [local, domain] = splitOn "@" email
 
 confYaml :: ByteString
 confYaml =
@@ -88,4 +120,5 @@ confYaml =
   \  displayName: \"displayName\"\n\
   \  userName: \"uidNumber\"\n\
   \  externalId: \"email\"\n\
-  \  email: \"email\""
+  \  email: \"email\"\n\
+  \  roles: \"employeeType\"\n"
