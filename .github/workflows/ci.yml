@@ -7,6 +7,7 @@ on:
     branches: [master]
     tags:
     - 'v*'
+  workflow_dispatch:
 
 # INFO: The following configuration block ensures that only one build runs per branch,
 # which may be desirable for projects with a costly build process.
@@ -86,9 +87,11 @@ jobs:
     steps:
     - uses: actions/checkout@v2
 
-    - name: Set output
+    - name: Set tag output
       id: vars
-      run: echo ::set-output name=tag::${GITHUB_REF#refs/*/v}
+      run: echo "tag=${GITHUB_REF#refs/*/v}" >> $GITHUB_OUTPUT
+    - name: Check tag
+      run: echo ${{ steps.vars.outputs.tag }}
 
     - name: Build Image
       id: build-image
@@ -105,7 +108,7 @@ jobs:
       uses: redhat-actions/push-to-registry@v2
       with:
         image: ${{ steps.build-image.outputs.image }}
-        tags: ${{ steps.build-image.outputs.tags }} latest
+        tags: ${{ steps.build-image.outputs.tags }}
         registry: quay.io/wire
         username: wire+ldapscimbridge
         password: ${{ secrets.REGISTRY_PASSWORD }}
