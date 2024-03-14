@@ -3,6 +3,11 @@
 `ldap-scim-bridge` uses [PVP][1]-compatible versioning.
 The changelog is available [on GitHub][2].
 
+## 0.9
+
+- Map ldap attribute to SCIM roles (#26)
+- Bump dependencies (#25)
+
 ## 0.8
 
 - Fix repo home url in cabal file.
