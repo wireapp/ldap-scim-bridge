@@ -8,40 +8,74 @@ on:
     tags:
     - 'v*'
 
+# INFO: The following configuration block ensures that only one build runs per branch,
+# which may be desirable for projects with a costly build process.
+# Remove this block from the CI workflow to let each CI job run to completion.
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
-    name: ghc ${{ matrix.ghc }}
-    runs-on: ubuntu-latest
+    name: GHC ${{ matrix.ghc-version }} on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
-        cabal: ["3.10.2.1"]
-        ghc: ["9.4.8"]
+        os: [ubuntu-latest]
+        ghc-version: ['9.4']
+        cabal: ['3.10.2.1']
     if: "!startsWith(github.ref, 'refs/tags/v')"
 
     steps:
     - uses: actions/checkout@v2
       if: github.event.action == 'opened' || github.event.action == 'synchronize' || github.event.ref == 'refs/heads/master'
 
-    - uses: actions/setup-haskell@v1
+    - uses: actions/setup-haskell@v2
       name: Setup Haskell
       with:
-        ghc-version: ${{ matrix.ghc }}
+        ghc-version: ${{ matrix.ghc-version }}
         cabal-version: ${{ matrix.cabal }}
+        cabal-update: true
 
-    - uses: actions/cache@v1
-      name: Cache ~/.cabal/store
+    - name: Configure the build
+      run: |
+        cabal configure --enable-tests --enable-benchmarks --disable-documentation
+        cabal build all --dry-run
+      # The last step generates dist-newstyle/cache/plan.json for the cache key.
+
+    - name: Restore cached dependencies
+      uses: actions/cache/restore@v3
+      id: cache
+      env:
+        key: ${{ runner.os }}-ghc-${{ steps.setup.outputs.ghc-version }}-cabal-${{ steps.setup.outputs.cabal-version }}
       with:
-        path: ~/.cabal/store
-        key: ${{ runner.os }}-${{ matrix.ghc }}-cabal
+        path: ${{ steps.setup.outputs.cabal-store }}
+        key: ${{ env.key }}-plan-${{ hashFiles('**/plan.json') }}
+        restore-keys: ${{ env.key }}-
+
+    - name: Install dependencies
+      # If we had an exact cache hit, the dependencies will be up to date.
+      if: steps.cache.outputs.cache-hit != 'true'
+      run: cabal build all --only-dependencies
+
+    # Cache dependencies already here, so that we do not have to rebuild them should the subsequent steps fail.
+    - name: Save cached dependencies
+      uses: actions/cache/save@v3
+      # If we had an exact cache hit, trying to save the cache would error because of key clash.
+      if: steps.cache.outputs.cache-hit != 'true'
+      with:
+        path: ${{ steps.setup.outputs.cabal-store }}
+        key: ${{ steps.cache.outputs.cache-primary-key }}
 
     - name: Build
-      run: |
-        cabal v2-update
-        cabal v2-build --enable-tests --enable-benchmarks
+      run: cabal build all
 
-    - name: Test
-      run: |
-        cabal v2-test --test-show-details=always --test-option=--color
+    - name: Run tests
+      run: cabal test all
+
+    - name: Check cabal file
+      run: cabal check
 
   publish:
     # needs : build
