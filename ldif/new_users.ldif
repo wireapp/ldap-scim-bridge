@@ -12,3 +12,4 @@ email: uses123@example.com
 homeDirectory: /home/me
 userPassword: notgonnatelleither
 loginShell: /bin/bash
+employeeType: partner
