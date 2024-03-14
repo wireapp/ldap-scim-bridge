@@ -11,12 +11,11 @@ on:
 jobs:
   build:
     name: ghc ${{ matrix.ghc }}
-    runs-on: ubuntu-18.04
+    runs-on: ubuntu-latest
     strategy:
       matrix:
-        cabal: ["3.10"]
-        ghc:
-          - "9.4.8"
+        cabal: ["3.10.2.1"]
+        ghc: ["9.4.8"]
     if: "!startsWith(github.ref, 'refs/tags/v')"
 
     steps:
