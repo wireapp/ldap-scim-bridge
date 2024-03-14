@@ -1,0 +1,26 @@
+# One CLI to format the code tree - https://github.com/numtide/treefmt
+
+[formatter.nix]
+command = "nixpkgs-fmt"
+includes = ["*.nix"]
+
+[formatter.cabal-fmt]
+command = "cabal-fmt"
+options = [ "--inplace" ]
+includes = [ "*.cabal" ]
+excludes = [
+  "dist-newstyle/"
+]
+
+[formatter.haskell]
+command = "ormolu"
+options = [
+  "--mode", "inplace",
+  "--check-idempotence",
+]
+includes = ["*.hs"]
+excludes = []
+
+[formatter.shellcheck]
+command = "shellcheck"
+includes = ["*.sh"]

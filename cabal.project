@@ -1,0 +1,8 @@
+-- currently the latest tinylog version is not compatible with bytestring > 0.11
+-- we're using our own patch for tinylog until https://gitlab.com/twittner/tinylog/-/merge_requests/8 or similar has been merged into the upstream repo
+source-repository-package
+  type: git
+  location: https://gitlab.com/leif.battermann/tinylog.git
+  tag: c570eaec033766b49ed394feb9638bfc0bd247e2
+
+packages: ldap-scim-bridge.cabal

@@ -6,9 +6,10 @@ module LdapScimBridge where
 import Control.Exception (ErrorCall (ErrorCall), catch, throwIO)
 import qualified Data.Aeson as Aeson
 import qualified Data.Aeson.Encode.Pretty as Aeson
+import qualified Data.Aeson.Key as K
+import qualified Data.Aeson.KeyMap as KM
 import qualified Data.ByteString.Char8 as ByteString
 import qualified Data.Foldable as Foldable
-import qualified Data.HashMap.Lazy as HM
 import qualified Data.List
 import qualified Data.Map as Map
 import Data.String.Conversions (cs)
@@ -37,6 +38,7 @@ import qualified Web.Scim.Schema.Meta as Scim
 import qualified Web.Scim.Schema.Schema as Scim
 import qualified Web.Scim.Schema.User as Scim
 import qualified Web.Scim.Schema.User.Email as Scim
+import Prelude
 
 data LdapConf = LdapConf
   { -- | eg. @Ldap.Tls (host conf) Ldap.defaultTlsSettings@
@@ -86,9 +88,7 @@ instance Aeson.FromJSON LdapConf where
     fdeleteFromDirectory :: Maybe LdapSearch <- obj Aeson..:? "deleteFromDirectory"
 
     let vhost :: Host
-        vhost = case ftls of
-          True -> Ldap.Tls fhost Ldap.defaultTlsSettings
-          False -> Ldap.Plain fhost
+        vhost = if ftls then Ldap.Tls fhost Ldap.defaultTlsSettings else Ldap.Plain fhost
 
         vport :: PortNumber
         vport = fromIntegral fport
@@ -122,11 +122,11 @@ instance Aeson.FromJSON LdapSearch where
     fobjectClass :: Text <- obj Aeson..: "objectClass"
 
     extra :: [LdapFilterAttr] <- do
-      let go :: (Text, Yaml.Value) -> Yaml.Parser LdapFilterAttr
+      let go :: (KM.Key, Yaml.Value) -> Yaml.Parser LdapFilterAttr
           go (key, val) = do
             str <- Aeson.withText "val" pure val
-            pure $ LdapFilterAttr key str
-      go `mapM` HM.toList (HM.filterWithKey (\k _ -> k `notElem` ["base", "objectClass"]) obj)
+            pure $ LdapFilterAttr (K.toText key) str
+      go `mapM` KM.toList (KM.filterWithKey (\k _ -> k `notElem` ["base", "objectClass"]) obj)
     pure $ LdapSearch (Dn fbase) fobjectClass extra
 
 data ScimConf = ScimConf
@@ -272,7 +272,7 @@ ldapObjectClassFilter :: Text -> Filter -- TODO: inline?
 ldapObjectClassFilter = (Attr "objectClass" :=) . cs
 
 ldapFilterAttrToFilter :: LdapFilterAttr -> Filter -- TODO: inline?  replace LdapFilterAttr with `Attr` and `:=`?
-ldapFilterAttrToFilter (LdapFilterAttr key val) = Attr key := (cs val)
+ldapFilterAttrToFilter (LdapFilterAttr key val) = Attr key := cs val
 
 listLdapUsers :: LdapConf -> LdapSearch -> LdapResult [SearchEntry]
 listLdapUsers conf searchConf = Ldap.with (ldapHost conf) (ldapPort conf) $ \l -> do
@@ -366,7 +366,7 @@ updateScimPeer lgr conf = do
     -- delete
     lgr Info "[delete: started]"
     let ldapDeleteesAttr = filter (isDeletee (ldapSource conf)) ldaps
-    ldapDeleteesDirectory :: [SearchEntry] <- case (ldapDeleteFromDirectory (ldapSource conf)) of
+    ldapDeleteesDirectory :: [SearchEntry] <- case ldapDeleteFromDirectory (ldapSource conf) of
       Just (searchConf :: LdapSearch) ->
         either (throwIO . ErrorCall . show) pure =<< listLdapUsers (ldapSource conf) searchConf
       Nothing ->
