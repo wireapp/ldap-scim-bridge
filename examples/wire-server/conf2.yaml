@@ -20,7 +20,7 @@ scimTarget:
   host: "localhost"
   port: 8088
   path: "/scim/v2"
-  token: "Bearer OWAWkt1fBGawKWV50+Zh/Uqitmhj1JC5WlWlltYMIcg="
+  token: "Bearer RRhtCL/VF9IYcmb3E9zaDo3rP6w3mZ3Ww3da7d2RDR8="
 mapping:
   userName: "uidNumber"
   externalId: "email"

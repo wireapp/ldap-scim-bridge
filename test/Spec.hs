@@ -47,7 +47,7 @@ main = hspec $ do
               & addAttr "displayName" displayName
               & addAttr "uidNumber" userName
               & addAttr "email" email
-              & addAttr "xroles" role
+              & addAttr "employeeType" role
 
       let expectedScimUser = mkScimUser displayName userName externalId email (Just role)
 
@@ -121,4 +121,4 @@ confYaml =
   \  userName: \"uidNumber\"\n\
   \  externalId: \"email\"\n\
   \  email: \"email\"\n\
-  \  roles: \"xroles\"\n"
+  \  roles: \"employeeType\"\n"
