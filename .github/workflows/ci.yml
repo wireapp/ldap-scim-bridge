@@ -29,7 +29,6 @@ jobs:
 
     steps:
     - uses: actions/checkout@v4
-      if: github.event.action == 'opened' || github.event.action == 'synchronize' || github.event.ref == 'refs/heads/master'
 
     - name: Set up GHC ${{ matrix.ghc-version }}
       uses: haskell-actions/setup@v2
