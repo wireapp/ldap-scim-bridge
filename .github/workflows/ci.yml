@@ -90,7 +90,9 @@ jobs:
       id: vars
       run: echo "tag=${GITHUB_REF#refs/*/v}" >> $GITHUB_OUTPUT
     - name: Check tag
-      run: echo ${{ steps.vars.outputs.tag }}
+      run: echo ${TAG}
+      env:
+        TAG: ${{ steps.vars.outputs.tag }}
 
     - name: Build Image
       id: build-image
