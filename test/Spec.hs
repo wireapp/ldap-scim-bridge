@@ -32,7 +32,7 @@ main = hspec $ do
       let expectedScimUser = mkExpectedScimUser displayName userName externalId email Nothing
 
       conf <- Yaml.decodeThrow confYaml
-      let Right (actualSearchEntry, actualScimUser) = ldapToScim conf searchEntry
+      let Right (actualSearchEntry, actualScimUser) = ldapToScim Lenient conf searchEntry
       actualSearchEntry `shouldBe` searchEntry
       actualScimUser `shouldBe` expectedScimUser
 
@@ -52,7 +52,7 @@ main = hspec $ do
       let expectedScimUser = mkExpectedScimUser displayName userName externalId email (Just role)
 
       conf <- Yaml.decodeThrow confYaml
-      let Right (actualSearchEntry, actualScimUser) = ldapToScim conf searchEntry
+      let Right (actualSearchEntry, actualScimUser) = ldapToScim Lenient conf searchEntry
       actualSearchEntry `shouldBe` searchEntry
       actualScimUser `shouldBe` expectedScimUser
 
@@ -67,7 +67,7 @@ main = hspec $ do
               & addAttr "email" email
 
       conf <- Yaml.decodeThrow confYaml
-      ldapToScim conf searchEntry `shouldBe` Left []
+      ldapToScim Strict conf searchEntry `shouldBe` Left [(searchEntry, MissingMandatoryValue "userName")]
 
 searchEntryEmpty :: SearchEntry
 searchEntryEmpty = SearchEntry (Dn "") []

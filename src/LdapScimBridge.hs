@@ -168,6 +168,7 @@ instance Aeson.FromJSON BridgeConf
 
 data MappingError
   = MissingAttr Text
+  | MissingMandatoryValue Text
   | WrongNumberOfAttrValues Text String Int
   | CouldNotParseEmail Text String
   deriving stock (Eq, Show)
@@ -297,23 +298,37 @@ type User = Scim.User ScimTag
 
 type StoredUser = ScimClass.StoredUser ScimTag
 
--- | the 'undefined' is ok, the mapping is guaranteed to contain a filler for this, or the
--- mapping parser would have failed.
+-- | Note that the `userName` field is mandatory in SCIM, but we gloss over this by setting it
+-- to an empty Text here.
 emptyScimUser :: User
 emptyScimUser =
-  Scim.empty scimSchemas (error "undefined") Scim.NoUserExtra
+  Scim.empty scimSchemas "" Scim.NoUserExtra
 
 scimSchemas :: [Scim.Schema]
 scimSchemas = [Scim.User20]
 
+data RequireUserName = Lenient | Strict
+  deriving stock (Eq, Show)
+
+-- | Translate an ldap record into a scim record.  If username is not provided in the ldap
+-- record, behavior is defined by the first argument: if `Lenient`, just fill in an empty
+-- Text; if `Strict`, throw an error.
 ldapToScim ::
   forall m.
   (m ~ Either [(SearchEntry, MappingError)]) =>
+  RequireUserName ->
   BridgeConf ->
   SearchEntry ->
   m (SearchEntry, User)
-ldapToScim conf entry@(SearchEntry _ attrs) = (entry,) <$> Foldable.foldl' go (Right emptyScimUser) attrs
+ldapToScim reqUserName conf entry@(SearchEntry _ attrs) = do
+  guardUserName
+  (entry,) <$> Foldable.foldl' go (Right emptyScimUser) attrs
   where
+    guardUserName =
+      if reqUserName == Strict && Attr "userName" `notElem` (fst <$> toList attrs)
+        then Left [(entry, MissingMandatoryValue "userName")]
+        else Right ()
+
     codec = case ldapCodec (ldapSource conf) of
       Utf8 -> Text.decodeUtf8
       Latin1 -> Text.decodeLatin1
@@ -366,7 +381,7 @@ updateScimPeer lgr conf = do
     lgr Info "[post/put: started]"
     let ldapKeepees = filter (not . isDeletee (ldapSource conf)) ldaps
     scims :: [(SearchEntry, User)] <-
-      mapM (either (throwIO . ErrorCall . show) pure) (ldapToScim conf <$> ldapKeepees)
+      mapM (either (throwIO . ErrorCall . show) pure) (ldapToScim Strict conf <$> ldapKeepees)
     lgr Debug $ "Pulled the following ldap users for post/put:\n" <> show (fst <$> scims)
     lgr Debug . cs $ "Translated to scim:\n" <> Aeson.encodePretty (snd <$> scims)
     updateScimPeerPostPut lgr clientEnv tok (snd <$> scims)
@@ -382,7 +397,7 @@ updateScimPeer lgr conf = do
         pure mempty
 
     scims :: [(SearchEntry, User)] <-
-      mapM (either (throwIO . ErrorCall . show) pure) (ldapToScim conf <$> (ldapDeleteesAttr <> ldapDeleteesDirectory))
+      mapM (either (throwIO . ErrorCall . show) pure) (ldapToScim Lenient conf <$> (ldapDeleteesAttr <> ldapDeleteesDirectory))
     lgr Debug $ "Pulled the following ldap users for delete:\n" <> show (fst <$> scims)
     lgr Debug . cs $ "Translated to scim:\n" <> Aeson.encodePretty (snd <$> scims)
     updateScimPeerDelete lgr clientEnv tok (snd <$> scims)
