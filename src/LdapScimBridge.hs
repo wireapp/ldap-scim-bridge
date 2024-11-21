@@ -84,7 +84,7 @@ instance Aeson.FromJSON LdapConf where
     fpassword :: String <- obj Aeson..: "password"
     fsearch :: LdapSearch <- obj Aeson..: "search"
     fcodec :: Text <- obj Aeson..: "codec"
-    fdeleteOnAttribute :: Maybe LdapFilterAttr <- obj Aeson..:? "deleteOnAttribute" -- TODO: this can go into 'fdeleteFromDirectory'.
+    fdeleteOnAttribute :: Maybe LdapFilterAttr <- obj Aeson..:? "deleteOnAttribute"
     fdeleteFromDirectory :: Maybe LdapSearch <- obj Aeson..:? "deleteFromDirectory"
 
     let vhost :: Host
@@ -237,7 +237,7 @@ instance Aeson.FromJSON Mapping where
           [val] -> Right $ \usr -> usr {Scim.displayName = Just val}
           bad -> Left $ WrongNumberOfAttrValues ldapFieldName "1" (Prelude.length bad)
 
-      -- Really, not username, but handle.
+      -- Wire user handle (the one with the '@').
       mapUserName :: Text -> FieldMapping
       mapUserName ldapFieldName = FieldMapping "userName" $
         \case
@@ -277,10 +277,10 @@ instance Aeson.FromJSON Mapping where
 
 type LdapResult a = IO (Either LdapError a)
 
-ldapObjectClassFilter :: Text -> Filter -- TODO: inline?
+ldapObjectClassFilter :: Text -> Filter
 ldapObjectClassFilter = (Attr "objectClass" :=) . cs
 
-ldapFilterAttrToFilter :: LdapFilterAttr -> Filter -- TODO: inline?  replace LdapFilterAttr with `Attr` and `:=`?
+ldapFilterAttrToFilter :: LdapFilterAttr -> Filter
 ldapFilterAttrToFilter (LdapFilterAttr key val) = Attr key := cs val
 
 listLdapUsers :: LdapConf -> LdapSearch -> LdapResult [SearchEntry]
@@ -308,7 +308,7 @@ scimSchemas = [Scim.User20]
 
 ldapToScim ::
   forall m.
-  m ~ Either [(SearchEntry, MappingError)] =>
+  (m ~ Either [(SearchEntry, MappingError)]) =>
   BridgeConf ->
   SearchEntry ->
   m (SearchEntry, User)
