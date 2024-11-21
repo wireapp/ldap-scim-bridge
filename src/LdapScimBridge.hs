@@ -1,5 +1,4 @@
 {-# LANGUAGE OverloadedStrings #-}
-{-# OPTIONS_GHC -Wno-orphans -Wno-missing-export-lists #-}
 
 module LdapScimBridge where
 
@@ -151,18 +150,23 @@ data BridgeConf = BridgeConf
   { ldapSource :: LdapConf,
     scimTarget :: ScimConf,
     mapping :: Mapping,
-    logLevel :: Level
+    logLevel :: PhantomParent Level
   }
   deriving stock (Show, Generic)
 
-instance Aeson.FromJSON Level where
-  parseJSON "Trace" = pure Trace
-  parseJSON "Debug" = pure Debug
-  parseJSON "Info" = pure Info
-  parseJSON "Warn" = pure Warn
-  parseJSON "Error" = pure Error
-  parseJSON "Fatal" = pure Fatal
-  parseJSON bad = fail $ "unknown Level: " <> show bad
+newtype PhantomParent a = PhantomParent {unPhantomParent :: a}
+  deriving stock (Eq, Ord, Bounded, Show, Generic)
+
+instance Aeson.FromJSON (PhantomParent Level) where
+  parseJSON =
+    fmap PhantomParent . \case
+      "Trace" -> pure Trace
+      "Debug" -> pure Debug
+      "Info" -> pure Info
+      "Warn" -> pure Warn
+      "Error" -> pure Error
+      "Fatal" -> pure Fatal
+      bad -> fail $ "unknown Level: " <> show bad
 
 instance Aeson.FromJSON BridgeConf
 
@@ -521,7 +525,7 @@ mkLogger lvl = do
 main :: IO ()
 main = do
   myconf :: BridgeConf <- parseCli
-  lgr :: Logger <- mkLogger (logLevel myconf)
+  lgr :: Logger <- mkLogger (unPhantomParent $ logLevel myconf)
   lgr Debug $ show (mapping myconf)
   updateScimPeer lgr myconf `catch` logErrors lgr
   where
