@@ -56,6 +56,19 @@ main = hspec $ do
       actualSearchEntry `shouldBe` searchEntry
       actualScimUser `shouldBe` expectedScimUser
 
+    it "helpful error message if scim userName (wire handle) field is missing" $ do
+      let displayName = "John Doe"
+      let userName = "jdoe"
+      let externalId = "jdoe@nodomain"
+      let email = "jdoe@nodomain"
+      let searchEntry =
+            searchEntryEmpty
+              & addAttr "displayName" displayName
+              & addAttr "email" email
+
+      conf <- Yaml.decodeThrow confYaml
+      ldapToScim conf searchEntry `shouldBe` Left []
+
 searchEntryEmpty :: SearchEntry
 searchEntryEmpty = SearchEntry (Dn "") []
 
