@@ -154,6 +154,7 @@ data BridgeConf = BridgeConf
   }
   deriving stock (Show, Generic)
 
+-- | Work around orphan instances.  Might not be a phantom, but I like the name.  :)
 newtype PhantomParent a = PhantomParent {unPhantomParent :: a}
   deriving stock (Eq, Ord, Bounded, Show, Generic)
 
