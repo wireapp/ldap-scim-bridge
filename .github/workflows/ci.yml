@@ -24,8 +24,8 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest]
-        ghc-version: ['9.4']
-        cabal: ['3.10.2.1']
+        ghc-version: ['9.4', '9.6.6']
+        cabal: ['3.10.3.0']
 
     steps:
     - uses: actions/checkout@v4
