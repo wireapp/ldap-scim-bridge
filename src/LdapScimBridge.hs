@@ -304,7 +304,8 @@ type User = Scim.User ScimTag
 type StoredUser = ScimClass.StoredUser ScimTag
 
 -- | Note that the `userName` field is mandatory in SCIM, but we gloss over this by setting it
--- to an empty Text here.
+-- to an empty Text here.  See 'RequireUserName', 'ldapToScim' if you wonder whether this is a
+-- good idea.
 emptyScimUser :: User
 emptyScimUser =
   Scim.empty scimSchemas "" Scim.NoUserExtra
