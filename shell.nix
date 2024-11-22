@@ -4,12 +4,14 @@ let
     sha256 = "sha256:12748r3h44hy3a41slm5hcihn1nhrxjlgp75qz6iwzazkxnclx00";
   };
   pkgs = import nixpkgs { config = { }; overlays = [ ]; };
+  project = pkgs.haskellPackages.callPackage ./default.nix {};
 in
 
-
-pkgs.mkShellNoCC rec {
+pkgs.mkShell rec {
+  buildInputs = project.env.nativeBuildInputs;
   nativeBuildInputs = with pkgs; [
     cabal-install
+    cabal2nix
     ghcid
     ghc
     zlib

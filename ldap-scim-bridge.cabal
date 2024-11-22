@@ -8,8 +8,8 @@ bug-reports:        https://github.com/wireapp/ldap-scim-bridge/issues
 license:            AGPL-3.0-or-later
 license-file:       LICENSE
 author:             Matthias Fischmann
-maintainer:         Matthias Fischmann <mf@zerobuzz.net>
-copyright:          (c) 2021 wire.com
+maintainer:         Matthias Fischmann <matthias@wire.com>
+copyright:          (c) 2024 wire.com
 category:           System
 build-type:         Simple
 extra-doc-files:
@@ -125,7 +125,7 @@ test-suite ldap-scim-bridge-test
     , base
     , bytestring          >=0.11.5
     , email-validate      >=2.3.2
-    , hscim               >=0.4.0.2
+    , hscim
     , hspec
     , ldap-client         >=0.4.2
     , ldap-scim-bridge
