@@ -316,7 +316,7 @@ scimSchemas = [Scim.User20]
 data RequireUserName = Lenient | Strict
   deriving stock (Eq, Show)
 
--- | Translate an ldap record into a scim record.  If username is not provided in the ldap
+-- | Translate an LDAP record into a SCIM record.  If username is not provided in the LDAP
 -- record, behavior is defined by the first argument: if `Lenient`, just fill in an empty
 -- Text; if `Strict`, throw an error.
 ldapToScim ::
