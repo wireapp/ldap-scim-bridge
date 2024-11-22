@@ -1,7 +1,7 @@
 let
   nixpkgs = fetchTarball {
-    url = "https://github.com/NixOS/nixpkgs/archive/7eeacecff44e05a9fd61b9e03836b66ecde8a525.tar.gz";
-    sha256 = "sha256:0f6nv0pgk58d1962r8vswi7ks59fryh0yrdk99d30b3qj11a2045";
+    url = "https://github.com/NixOS/nixpkgs/archive/4f31540079322e6013930b5b2563fd10f96917f0.tar.gz";
+    sha256 = "sha256:12748r3h44hy3a41slm5hcihn1nhrxjlgp75qz6iwzazkxnclx00";
   };
   pkgs = import nixpkgs { config = { }; overlays = [ ]; };
 in
@@ -13,7 +13,7 @@ pkgs.mkShellNoCC rec {
     ghcid
     ghc
     zlib
-    (haskell.lib.justStaticExecutables pkgs.haskell.packages.ghc94.ormolu_0_5_2_0)
+    (haskell.lib.justStaticExecutables haskellPackages.ormolu)
     (haskell.lib.justStaticExecutables haskellPackages.cabal-fmt)
     nixpkgs-fmt
     treefmt
