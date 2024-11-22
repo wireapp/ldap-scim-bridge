@@ -1,5 +1,4 @@
 {-# LANGUAGE OverloadedStrings #-}
-{-# OPTIONS_GHC -Wno-orphans -Wno-missing-export-lists #-}
 
 module LdapScimBridge where
 
@@ -84,7 +83,7 @@ instance Aeson.FromJSON LdapConf where
     fpassword :: String <- obj Aeson..: "password"
     fsearch :: LdapSearch <- obj Aeson..: "search"
     fcodec :: Text <- obj Aeson..: "codec"
-    fdeleteOnAttribute :: Maybe LdapFilterAttr <- obj Aeson..:? "deleteOnAttribute" -- TODO: this can go into 'fdeleteFromDirectory'.
+    fdeleteOnAttribute :: Maybe LdapFilterAttr <- obj Aeson..:? "deleteOnAttribute"
     fdeleteFromDirectory :: Maybe LdapSearch <- obj Aeson..:? "deleteFromDirectory"
 
     let vhost :: Host
@@ -151,23 +150,30 @@ data BridgeConf = BridgeConf
   { ldapSource :: LdapConf,
     scimTarget :: ScimConf,
     mapping :: Mapping,
-    logLevel :: Level
+    logLevel :: PhantomParent Level
   }
   deriving stock (Show, Generic)
 
-instance Aeson.FromJSON Level where
-  parseJSON "Trace" = pure Trace
-  parseJSON "Debug" = pure Debug
-  parseJSON "Info" = pure Info
-  parseJSON "Warn" = pure Warn
-  parseJSON "Error" = pure Error
-  parseJSON "Fatal" = pure Fatal
-  parseJSON bad = fail $ "unknown Level: " <> show bad
+-- | Work around orphan instances.  Might not be a phantom, but I like the name.  :)
+newtype PhantomParent a = PhantomParent {unPhantomParent :: a}
+  deriving stock (Eq, Ord, Bounded, Show, Generic)
+
+instance Aeson.FromJSON (PhantomParent Level) where
+  parseJSON =
+    fmap PhantomParent . \case
+      "Trace" -> pure Trace
+      "Debug" -> pure Debug
+      "Info" -> pure Info
+      "Warn" -> pure Warn
+      "Error" -> pure Error
+      "Fatal" -> pure Fatal
+      bad -> fail $ "unknown Level: " <> show bad
 
 instance Aeson.FromJSON BridgeConf
 
 data MappingError
   = MissingAttr Text
+  | MissingMandatoryValue Text
   | WrongNumberOfAttrValues Text String Int
   | CouldNotParseEmail Text String
   deriving stock (Eq, Show)
@@ -223,35 +229,35 @@ instance Aeson.FromJSON Mapping where
             go mp (k, b) = Map.alter (Just . maybe [b] (b :)) k mp
 
     pure . Mapping . listToMap . catMaybes $
-      [ (\fdisplayName -> (fdisplayName, mapDisplayName fdisplayName)) <$> mfdisplayName,
-        Just (fuserName, mapUserName fuserName),
-        Just (fexternalId, mapExternalId fexternalId),
-        (\femail -> (femail, mapEmail femail)) <$> mfemail,
-        (\frole -> (frole, mapRole frole)) <$> mfrole
+      [ (\fdisplayName -> (fdisplayName, mapDisplayName fdisplayName "displayName")) <$> mfdisplayName,
+        Just (fuserName, mapUserName fuserName "userName"),
+        Just (fexternalId, mapExternalId fexternalId "externalId"),
+        (\femail -> (femail, mapEmail femail "email")) <$> mfemail,
+        (\frole -> (frole, mapRole frole "roles")) <$> mfrole
       ]
     where
       -- The name that shows for this user in wire.
-      mapDisplayName :: Text -> FieldMapping
-      mapDisplayName ldapFieldName = FieldMapping "displayName" $
+      mapDisplayName :: Text -> Text -> FieldMapping
+      mapDisplayName ldapFieldName scimFieldName = FieldMapping scimFieldName $
         \case
           [val] -> Right $ \usr -> usr {Scim.displayName = Just val}
-          bad -> Left $ WrongNumberOfAttrValues ldapFieldName "1" (Prelude.length bad)
+          bad -> Left $ WrongNumberOfAttrValues (ldapFieldName <> " -> " <> scimFieldName) "1" (Prelude.length bad)
 
-      -- Really, not username, but handle.
-      mapUserName :: Text -> FieldMapping
-      mapUserName ldapFieldName = FieldMapping "userName" $
+      -- Wire user handle (the one with the '@').
+      mapUserName :: Text -> Text -> FieldMapping
+      mapUserName ldapFieldName scimFieldName = FieldMapping scimFieldName $
         \case
           [val] -> Right $ \usr -> usr {Scim.userName = val}
-          bad -> Left $ WrongNumberOfAttrValues ldapFieldName "1" (Prelude.length bad)
+          bad -> Left $ WrongNumberOfAttrValues (ldapFieldName <> " -> " <> scimFieldName) "1" (Prelude.length bad)
 
-      mapExternalId :: Text -> FieldMapping
-      mapExternalId ldapFieldName = FieldMapping "externalId" $
+      mapExternalId :: Text -> Text -> FieldMapping
+      mapExternalId ldapFieldName scimFieldName = FieldMapping scimFieldName $
         \case
           [val] -> Right $ \usr -> usr {Scim.externalId = Just val}
-          bad -> Left $ WrongNumberOfAttrValues ldapFieldName "1" (Prelude.length bad)
+          bad -> Left $ WrongNumberOfAttrValues (ldapFieldName <> " -> " <> scimFieldName) "1" (Prelude.length bad)
 
-      mapEmail :: Text -> FieldMapping
-      mapEmail ldapFieldName = FieldMapping "emails" $
+      mapEmail :: Text -> Text -> FieldMapping
+      mapEmail ldapFieldName scimFieldName = FieldMapping scimFieldName $
         \case
           [] -> Right id
           [val] -> case Text.Email.Validate.validate (SC.cs val) of
@@ -264,23 +270,23 @@ instance Aeson.FromJSON Mapping where
           bad ->
             Left $
               WrongNumberOfAttrValues
-                ldapFieldName
+                (ldapFieldName <> " -> " <> scimFieldName)
                 "<=1 (with more than one email, which one should be primary?)"
                 (Prelude.length bad)
 
-      mapRole :: Text -> FieldMapping
-      mapRole ldapFieldName = FieldMapping "roles" $
+      mapRole :: Text -> Text -> FieldMapping
+      mapRole ldapFieldName scimFieldName = FieldMapping scimFieldName $
         \case
           [] -> Right id
           [val] -> Right $ \usr -> usr {Scim.roles = [val]}
-          bad -> Left $ WrongNumberOfAttrValues ldapFieldName "1" (Prelude.length bad)
+          bad -> Left $ WrongNumberOfAttrValues (ldapFieldName <> " -> " <> scimFieldName) "1" (Prelude.length bad)
 
 type LdapResult a = IO (Either LdapError a)
 
-ldapObjectClassFilter :: Text -> Filter -- TODO: inline?
+ldapObjectClassFilter :: Text -> Filter
 ldapObjectClassFilter = (Attr "objectClass" :=) . cs
 
-ldapFilterAttrToFilter :: LdapFilterAttr -> Filter -- TODO: inline?  replace LdapFilterAttr with `Attr` and `:=`?
+ldapFilterAttrToFilter :: LdapFilterAttr -> Filter
 ldapFilterAttrToFilter (LdapFilterAttr key val) = Attr key := cs val
 
 listLdapUsers :: LdapConf -> LdapSearch -> LdapResult [SearchEntry]
@@ -297,23 +303,38 @@ type User = Scim.User ScimTag
 
 type StoredUser = ScimClass.StoredUser ScimTag
 
--- | the 'undefined' is ok, the mapping is guaranteed to contain a filler for this, or the
--- mapping parser would have failed.
+-- | Note that the `userName` field is mandatory in SCIM, but we gloss over this by setting it
+-- to an empty Text here.  See 'RequireUserName', 'ldapToScim' if you wonder whether this is a
+-- good idea.
 emptyScimUser :: User
 emptyScimUser =
-  Scim.empty scimSchemas (error "undefined") Scim.NoUserExtra
+  Scim.empty scimSchemas "" Scim.NoUserExtra
 
 scimSchemas :: [Scim.Schema]
 scimSchemas = [Scim.User20]
 
+data RequireUserName = Lenient | Strict
+  deriving stock (Eq, Show)
+
+-- | Translate an LDAP record into a SCIM record.  If username is not provided in the LDAP
+-- record, behavior is defined by the first argument: if `Lenient`, just fill in an empty
+-- Text; if `Strict`, throw an error.
 ldapToScim ::
   forall m.
-  m ~ Either [(SearchEntry, MappingError)] =>
+  (m ~ Either [(SearchEntry, MappingError)]) =>
+  RequireUserName ->
   BridgeConf ->
   SearchEntry ->
   m (SearchEntry, User)
-ldapToScim conf entry@(SearchEntry _ attrs) = (entry,) <$> Foldable.foldl' go (Right emptyScimUser) attrs
+ldapToScim reqUserName conf entry@(SearchEntry _ attrs) = do
+  guardUserName
+  (entry,) <$> Foldable.foldl' go (Right emptyScimUser) attrs
   where
+    guardUserName =
+      if reqUserName == Strict && Attr "userName" `notElem` (fst <$> toList attrs)
+        then Left [(entry, MissingMandatoryValue "userName")]
+        else Right ()
+
     codec = case ldapCodec (ldapSource conf) of
       Utf8 -> Text.decodeUtf8
       Latin1 -> Text.decodeLatin1
@@ -366,7 +387,7 @@ updateScimPeer lgr conf = do
     lgr Info "[post/put: started]"
     let ldapKeepees = filter (not . isDeletee (ldapSource conf)) ldaps
     scims :: [(SearchEntry, User)] <-
-      mapM (either (throwIO . ErrorCall . show) pure) (ldapToScim conf <$> ldapKeepees)
+      mapM (either (throwIO . ErrorCall . show) pure) (ldapToScim Strict conf <$> ldapKeepees)
     lgr Debug $ "Pulled the following ldap users for post/put:\n" <> show (fst <$> scims)
     lgr Debug . cs $ "Translated to scim:\n" <> Aeson.encodePretty (snd <$> scims)
     updateScimPeerPostPut lgr clientEnv tok (snd <$> scims)
@@ -382,7 +403,7 @@ updateScimPeer lgr conf = do
         pure mempty
 
     scims :: [(SearchEntry, User)] <-
-      mapM (either (throwIO . ErrorCall . show) pure) (ldapToScim conf <$> (ldapDeleteesAttr <> ldapDeleteesDirectory))
+      mapM (either (throwIO . ErrorCall . show) pure) (ldapToScim Lenient conf <$> (ldapDeleteesAttr <> ldapDeleteesDirectory))
     lgr Debug $ "Pulled the following ldap users for delete:\n" <> show (fst <$> scims)
     lgr Debug . cs $ "Translated to scim:\n" <> Aeson.encodePretty (snd <$> scims)
     updateScimPeerDelete lgr clientEnv tok (snd <$> scims)
@@ -506,7 +527,7 @@ mkLogger lvl = do
 main :: IO ()
 main = do
   myconf :: BridgeConf <- parseCli
-  lgr :: Logger <- mkLogger (logLevel myconf)
+  lgr :: Logger <- mkLogger (unPhantomParent $ logLevel myconf)
   lgr Debug $ show (mapping myconf)
   updateScimPeer lgr myconf `catch` logErrors lgr
   where

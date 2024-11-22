@@ -1,6 +1,8 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 import Data.ByteString (ByteString)
+import Data.Function ((&))
+import Data.Maybe (maybeToList)
 import Data.String.Conversions (cs)
 import Data.Text
 import qualified Data.Yaml as Yaml
@@ -12,8 +14,6 @@ import Web.Scim.Schema.Meta as Scim
 import Web.Scim.Schema.Schema as Scim
 import Web.Scim.Schema.User as Scim
 import Web.Scim.Schema.User.Email as Scim
-import Data.Function ((&))
-import Data.Maybe (maybeToList)
 
 main :: IO ()
 main = hspec $ do
@@ -29,10 +29,10 @@ main = hspec $ do
               & addAttr "uidNumber" userName
               & addAttr "email" email
 
-      let expectedScimUser = mkScimUser displayName userName externalId email Nothing
+      let expectedScimUser = mkExpectedScimUser displayName userName externalId email Nothing
 
       conf <- Yaml.decodeThrow confYaml
-      let Right (actualSearchEntry, actualScimUser) = ldapToScim conf searchEntry
+      let Right (actualSearchEntry, actualScimUser) = ldapToScim Lenient conf searchEntry
       actualSearchEntry `shouldBe` searchEntry
       actualScimUser `shouldBe` expectedScimUser
 
@@ -49,12 +49,25 @@ main = hspec $ do
               & addAttr "email" email
               & addAttr "employeeType" role
 
-      let expectedScimUser = mkScimUser displayName userName externalId email (Just role)
+      let expectedScimUser = mkExpectedScimUser displayName userName externalId email (Just role)
 
       conf <- Yaml.decodeThrow confYaml
-      let Right (actualSearchEntry, actualScimUser) = ldapToScim conf searchEntry
+      let Right (actualSearchEntry, actualScimUser) = ldapToScim Lenient conf searchEntry
       actualSearchEntry `shouldBe` searchEntry
       actualScimUser `shouldBe` expectedScimUser
+
+    it "helpful error message if scim userName (wire handle) field is missing" $ do
+      let displayName = "John Doe"
+      let userName = "jdoe"
+      let externalId = "jdoe@nodomain"
+      let email = "jdoe@nodomain"
+      let searchEntry =
+            searchEntryEmpty
+              & addAttr "displayName" displayName
+              & addAttr "email" email
+
+      conf <- Yaml.decodeThrow confYaml
+      ldapToScim Strict conf searchEntry `shouldBe` Left [(searchEntry, MissingMandatoryValue "userName")]
 
 searchEntryEmpty :: SearchEntry
 searchEntryEmpty = SearchEntry (Dn "") []
@@ -62,8 +75,8 @@ searchEntryEmpty = SearchEntry (Dn "") []
 addAttr :: Text -> Text -> SearchEntry -> SearchEntry
 addAttr key value (SearchEntry dn attrs) = SearchEntry dn ((Attr key, [cs value]) : attrs)
 
-mkScimUser :: Text -> Text -> Text -> Text -> Maybe Text -> Scim.User ScimTag
-mkScimUser displayName userName externalId email mRole =
+mkExpectedScimUser :: Text -> Text -> Text -> Text -> Maybe Text -> Scim.User ScimTag
+mkExpectedScimUser displayName userName externalId email mRole =
   Scim.User
     { schemas = [User20],
       userName = userName,
