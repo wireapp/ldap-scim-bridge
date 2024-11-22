@@ -229,35 +229,35 @@ instance Aeson.FromJSON Mapping where
             go mp (k, b) = Map.alter (Just . maybe [b] (b :)) k mp
 
     pure . Mapping . listToMap . catMaybes $
-      [ (\fdisplayName -> (fdisplayName, mapDisplayName fdisplayName)) <$> mfdisplayName,
-        Just (fuserName, mapUserName fuserName),
-        Just (fexternalId, mapExternalId fexternalId),
-        (\femail -> (femail, mapEmail femail)) <$> mfemail,
-        (\frole -> (frole, mapRole frole)) <$> mfrole
+      [ (\fdisplayName -> (fdisplayName, mapDisplayName fdisplayName "displayName")) <$> mfdisplayName,
+        Just (fuserName, mapUserName fuserName "userName"),
+        Just (fexternalId, mapExternalId fexternalId "externalId"),
+        (\femail -> (femail, mapEmail femail "email")) <$> mfemail,
+        (\frole -> (frole, mapRole frole "roles")) <$> mfrole
       ]
     where
       -- The name that shows for this user in wire.
-      mapDisplayName :: Text -> FieldMapping
-      mapDisplayName ldapFieldName = FieldMapping "displayName" $
+      mapDisplayName :: Text -> Text -> FieldMapping
+      mapDisplayName ldapFieldName scimFieldName = FieldMapping scimFieldName $
         \case
           [val] -> Right $ \usr -> usr {Scim.displayName = Just val}
-          bad -> Left $ WrongNumberOfAttrValues ldapFieldName "1" (Prelude.length bad)
+          bad -> Left $ WrongNumberOfAttrValues (ldapFieldName <> " -> " <> scimFieldName) "1" (Prelude.length bad)
 
       -- Wire user handle (the one with the '@').
-      mapUserName :: Text -> FieldMapping
-      mapUserName ldapFieldName = FieldMapping "userName" $
+      mapUserName :: Text -> Text -> FieldMapping
+      mapUserName ldapFieldName scimFieldName = FieldMapping scimFieldName $
         \case
           [val] -> Right $ \usr -> usr {Scim.userName = val}
-          bad -> Left $ WrongNumberOfAttrValues ldapFieldName "1" (Prelude.length bad)
+          bad -> Left $ WrongNumberOfAttrValues (ldapFieldName <> " -> " <> scimFieldName) "1" (Prelude.length bad)
 
-      mapExternalId :: Text -> FieldMapping
-      mapExternalId ldapFieldName = FieldMapping "externalId" $
+      mapExternalId :: Text -> Text -> FieldMapping
+      mapExternalId ldapFieldName scimFieldName = FieldMapping scimFieldName $
         \case
           [val] -> Right $ \usr -> usr {Scim.externalId = Just val}
-          bad -> Left $ WrongNumberOfAttrValues ldapFieldName "1" (Prelude.length bad)
+          bad -> Left $ WrongNumberOfAttrValues (ldapFieldName <> " -> " <> scimFieldName) "1" (Prelude.length bad)
 
-      mapEmail :: Text -> FieldMapping
-      mapEmail ldapFieldName = FieldMapping "emails" $
+      mapEmail :: Text -> Text -> FieldMapping
+      mapEmail ldapFieldName scimFieldName = FieldMapping scimFieldName $
         \case
           [] -> Right id
           [val] -> case Text.Email.Validate.validate (SC.cs val) of
@@ -270,16 +270,16 @@ instance Aeson.FromJSON Mapping where
           bad ->
             Left $
               WrongNumberOfAttrValues
-                ldapFieldName
+                (ldapFieldName <> " -> " <> scimFieldName)
                 "<=1 (with more than one email, which one should be primary?)"
                 (Prelude.length bad)
 
-      mapRole :: Text -> FieldMapping
-      mapRole ldapFieldName = FieldMapping "roles" $
+      mapRole :: Text -> Text -> FieldMapping
+      mapRole ldapFieldName scimFieldName = FieldMapping scimFieldName $
         \case
           [] -> Right id
           [val] -> Right $ \usr -> usr {Scim.roles = [val]}
-          bad -> Left $ WrongNumberOfAttrValues ldapFieldName "1" (Prelude.length bad)
+          bad -> Left $ WrongNumberOfAttrValues (ldapFieldName <> " -> " <> scimFieldName) "1" (Prelude.length bad)
 
 type LdapResult a = IO (Either LdapError a)
 
