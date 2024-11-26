@@ -264,7 +264,7 @@ instance Aeson.FromJSON Mapping where
             Right email -> Right $ \usr ->
               usr
                 { Scim.emails =
-                    [Scim.Email Nothing (Scim.EmailAddress2 email) Nothing]
+                    [Scim.Email Nothing (Scim.EmailAddress email) Nothing]
                 }
             Left err -> Left $ CouldNotParseEmail val err
           bad ->

@@ -91,7 +91,7 @@ mkExpectedScimUser displayName userName externalId email mRole =
       locale = Nothing,
       active = Nothing,
       password = Nothing,
-      emails = [Email {typ = Nothing, Scim.value = EmailAddress2 {unEmailAddress = unsafeEmailAddress (cs local) (cs domain)}, primary = Nothing}],
+      emails = [Email {typ = Nothing, Scim.value = EmailAddress {unEmailAddress = unsafeEmailAddress (cs local) (cs domain)}, primary = Nothing}],
       phoneNumbers = [],
       ims = [],
       photos = [],
