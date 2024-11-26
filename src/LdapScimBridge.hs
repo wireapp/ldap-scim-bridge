@@ -179,7 +179,8 @@ data MappingError
   deriving stock (Eq, Show)
 
 data FieldMapping = FieldMapping
-  { fieldMappingLabel :: Text,
+  { -- | This is the scim label (the ldap label is in the key of the `Mapping`)
+    fieldMappingLabel :: Text,
     fieldMappingFun ::
       [Text] ->
       Either
