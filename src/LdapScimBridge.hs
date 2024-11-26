@@ -331,9 +331,21 @@ ldapToScim reqUserName conf entry@(SearchEntry _ attrs) = do
   guardUserName
   (entry,) <$> Foldable.foldl' go (Right emptyScimUser) attrs
   where
-    guardUserName =
-      if reqUserName == Strict && Attr "userName" `notElem` (fst <$> toList attrs)
-        then Left [(entry, MissingMandatoryValue "userName")]
+    guardUserName = do
+      let raw :: [(Text, [FieldMapping])]
+          raw = Map.assocs . fromMapping . mapping $ conf
+
+          fltr :: [(Text, [FieldMapping])] -> [(Text, [FieldMapping])]
+          fltr = filter (\(_, fm) -> (fieldMappingLabel <$> fm) == ["userName"])
+
+          userNameInLdap = case fltr raw of
+            [(ldapName, _)] -> ldapName
+            bad ->
+              -- `userName` is a mandatory field, the `Mapping` parser guarantees that it's always present.
+              error $ "impossible: " <> show bad
+
+      if reqUserName == Strict && Attr userNameInLdap `notElem` (fst <$> toList attrs)
+        then Left [(entry, MissingMandatoryValue (userNameInLdap <> " -> userName"))]
         else Right ()
 
     codec = case ldapCodec (ldapSource conf) of
