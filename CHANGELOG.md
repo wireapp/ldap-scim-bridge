@@ -3,6 +3,10 @@
 `ldap-scim-bridge` uses [PVP][1]-compatible versioning.
 The changelog is available [on GitHub][2].
 
+## 0.10
+
+- More helpful error messages on bad LDAP input records.
+
 ## 0.9
 
 - Map ldap attribute to SCIM roles (#26)

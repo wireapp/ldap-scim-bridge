@@ -13,6 +13,7 @@ import qualified Data.List
 import qualified Data.Map as Map
 import Data.String.Conversions (cs)
 import qualified Data.String.Conversions as SC
+import qualified Data.Text as Text
 import qualified Data.Text.Encoding as Text
 import qualified Data.Yaml as Yaml
 import qualified GHC.Show
@@ -172,14 +173,27 @@ instance Aeson.FromJSON (PhantomParent Level) where
 instance Aeson.FromJSON BridgeConf
 
 data MappingError
-  = MissingAttr Text
-  | MissingMandatoryValue Text
-  | WrongNumberOfAttrValues Text String Int
-  | CouldNotParseEmail Text String
-  deriving stock (Eq, Show)
+  = MissingMandatoryValue Text Text
+  | WrongNumberOfAttrValues Text Text String Int
+  | CouldNotParseEmail Text Text Text String
+  deriving stock (Eq)
+
+instance Show MappingError where
+  show = renderMappingError
+
+renderMappingError :: MappingError -> String
+renderMappingError (MissingMandatoryValue ldapAttr scimAttr) =
+  "MissingMandatoryValue: " <> Text.unpack ldapAttr <> " -> " <> Text.unpack scimAttr
+renderMappingError (WrongNumberOfAttrValues ldapAttr scimAttr expected actual) =
+  ("Wrong number of attribute values: " <> Text.unpack ldapAttr <> " -> " <> Text.unpack scimAttr)
+    <> (" (got <> " <> show actual <> "; expected " <> expected <> ")")
+renderMappingError (CouldNotParseEmail ldapAttr scimAttr bad err) =
+  ("Could not parse email: " <> Text.unpack ldapAttr <> " -> " <> Text.unpack scimAttr)
+    <> (" (input: " <> show bad <> "; error: " <> err <> ")")
 
 data FieldMapping = FieldMapping
-  { fieldMappingLabel :: Text,
+  { -- | This is the scim label (the ldap label is in the key of the `Mapping`)
+    fieldMappingLabel :: Text,
     fieldMappingFun ::
       [Text] ->
       Either
@@ -241,20 +255,20 @@ instance Aeson.FromJSON Mapping where
       mapDisplayName ldapFieldName scimFieldName = FieldMapping scimFieldName $
         \case
           [val] -> Right $ \usr -> usr {Scim.displayName = Just val}
-          bad -> Left $ WrongNumberOfAttrValues (ldapFieldName <> " -> " <> scimFieldName) "1" (Prelude.length bad)
+          bad -> Left $ WrongNumberOfAttrValues ldapFieldName scimFieldName "1" (Prelude.length bad)
 
       -- Wire user handle (the one with the '@').
       mapUserName :: Text -> Text -> FieldMapping
       mapUserName ldapFieldName scimFieldName = FieldMapping scimFieldName $
         \case
           [val] -> Right $ \usr -> usr {Scim.userName = val}
-          bad -> Left $ WrongNumberOfAttrValues (ldapFieldName <> " -> " <> scimFieldName) "1" (Prelude.length bad)
+          bad -> Left $ WrongNumberOfAttrValues ldapFieldName scimFieldName "1" (Prelude.length bad)
 
       mapExternalId :: Text -> Text -> FieldMapping
       mapExternalId ldapFieldName scimFieldName = FieldMapping scimFieldName $
         \case
           [val] -> Right $ \usr -> usr {Scim.externalId = Just val}
-          bad -> Left $ WrongNumberOfAttrValues (ldapFieldName <> " -> " <> scimFieldName) "1" (Prelude.length bad)
+          bad -> Left $ WrongNumberOfAttrValues ldapFieldName scimFieldName "1" (Prelude.length bad)
 
       mapEmail :: Text -> Text -> FieldMapping
       mapEmail ldapFieldName scimFieldName = FieldMapping scimFieldName $
@@ -264,13 +278,14 @@ instance Aeson.FromJSON Mapping where
             Right email -> Right $ \usr ->
               usr
                 { Scim.emails =
-                    [Scim.Email Nothing (Scim.EmailAddress2 email) Nothing]
+                    [Scim.Email Nothing (Scim.EmailAddress email) Nothing]
                 }
-            Left err -> Left $ CouldNotParseEmail val err
+            Left err -> Left $ CouldNotParseEmail ldapFieldName scimFieldName val err
           bad ->
             Left $
               WrongNumberOfAttrValues
-                (ldapFieldName <> " -> " <> scimFieldName)
+                ldapFieldName
+                scimFieldName
                 "<=1 (with more than one email, which one should be primary?)"
                 (Prelude.length bad)
 
@@ -279,7 +294,7 @@ instance Aeson.FromJSON Mapping where
         \case
           [] -> Right id
           [val] -> Right $ \usr -> usr {Scim.roles = [val]}
-          bad -> Left $ WrongNumberOfAttrValues (ldapFieldName <> " -> " <> scimFieldName) "1" (Prelude.length bad)
+          bad -> Left $ WrongNumberOfAttrValues ldapFieldName scimFieldName "1" (Prelude.length bad)
 
 type LdapResult a = IO (Either LdapError a)
 
@@ -330,9 +345,21 @@ ldapToScim reqUserName conf entry@(SearchEntry _ attrs) = do
   guardUserName
   (entry,) <$> Foldable.foldl' go (Right emptyScimUser) attrs
   where
-    guardUserName =
-      if reqUserName == Strict && Attr "userName" `notElem` (fst <$> toList attrs)
-        then Left [(entry, MissingMandatoryValue "userName")]
+    guardUserName = do
+      let raw :: [(Text, [FieldMapping])]
+          raw = Map.assocs . fromMapping . mapping $ conf
+
+          fltr :: [(Text, [FieldMapping])] -> [(Text, [FieldMapping])]
+          fltr = filter (\(_, fm) -> (fieldMappingLabel <$> fm) == ["userName"])
+
+          userNameInLdap = case fltr raw of
+            [(ldapName, _)] -> ldapName
+            bad ->
+              -- `userName` is a mandatory field, the `Mapping` parser guarantees that it's always present.
+              error $ "impossible: " <> show bad
+
+      if reqUserName == Strict && Attr userNameInLdap `notElem` (fst <$> toList attrs)
+        then Left [(entry, MissingMandatoryValue userNameInLdap "userName")]
         else Right ()
 
     codec = case ldapCodec (ldapSource conf) of
