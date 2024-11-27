@@ -32,7 +32,7 @@ common common-options
   build-depends:
     , aeson >= 2.1.2 && < 2.2
     , aeson-pretty >= 0.8.10 && < 0.9
-    , base >= 4.18.2 && < 4.21
+    , base >= 4.17 && < 4.21
     , bytestring >= 0.11.5 && < 0.12
     , containers >= 0.6.7 && < 0.7
     , email-validate >= 2.3.2 && < 2.4
