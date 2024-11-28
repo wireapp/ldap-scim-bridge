@@ -178,9 +178,6 @@ data MappingError
   | CouldNotParseEmail Text Text Text String
   deriving stock (Eq)
 
-instance Show MappingError where
-  show = renderMappingError
-
 renderMappingError :: MappingError -> String
 renderMappingError (MissingMandatoryValue ldapAttr scimAttr) =
   "MissingMandatoryValue: " <> Text.unpack ldapAttr <> " -> " <> Text.unpack scimAttr
@@ -190,6 +187,9 @@ renderMappingError (WrongNumberOfAttrValues ldapAttr scimAttr expected actual) =
 renderMappingError (CouldNotParseEmail ldapAttr scimAttr bad err) =
   ("Could not parse email: " <> Text.unpack ldapAttr <> " -> " <> Text.unpack scimAttr)
     <> (" (input: " <> show bad <> "; error: " <> err <> ")")
+
+renderSearchError :: [(SearchEntry, MappingError)] -> String
+renderSearchError = show . fmap (\(s, m) -> (s, renderMappingError m))
 
 data FieldMapping = FieldMapping
   { -- | This is the scim label (the ldap label is in the key of the `Mapping`)
@@ -414,7 +414,7 @@ updateScimPeer lgr conf = do
     lgr Info "[post/put: started]"
     let ldapKeepees = filter (not . isDeletee (ldapSource conf)) ldaps
     scims :: [(SearchEntry, User)] <-
-      mapM (either (throwIO . ErrorCall . show) pure) (ldapToScim Strict conf <$> ldapKeepees)
+      mapM (either (throwIO . ErrorCall . renderSearchError) pure) (ldapToScim Strict conf <$> ldapKeepees)
     lgr Debug $ "Pulled the following ldap users for post/put:\n" <> show (fst <$> scims)
     lgr Debug . cs $ "Translated to scim:\n" <> Aeson.encodePretty (snd <$> scims)
     updateScimPeerPostPut lgr clientEnv tok (snd <$> scims)
@@ -430,7 +430,7 @@ updateScimPeer lgr conf = do
         pure mempty
 
     scims :: [(SearchEntry, User)] <-
-      mapM (either (throwIO . ErrorCall . show) pure) (ldapToScim Lenient conf <$> (ldapDeleteesAttr <> ldapDeleteesDirectory))
+      mapM (either (throwIO . ErrorCall . renderSearchError) pure) (ldapToScim Lenient conf <$> (ldapDeleteesAttr <> ldapDeleteesDirectory))
     lgr Debug $ "Pulled the following ldap users for delete:\n" <> show (fst <$> scims)
     lgr Debug . cs $ "Translated to scim:\n" <> Aeson.encodePretty (snd <$> scims)
     updateScimPeerDelete lgr clientEnv tok (snd <$> scims)

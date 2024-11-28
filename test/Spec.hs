@@ -1,5 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 
+import Data.Bifunctor (first)
 import Data.ByteString (ByteString)
 import Data.Function ((&))
 import Data.Maybe (maybeToList)
@@ -67,7 +68,8 @@ main = hspec $ do
               & addAttr "email" email
 
       conf <- Yaml.decodeThrow confYaml
-      ldapToScim Strict conf searchEntry `shouldBe` Left [(searchEntry, MissingMandatoryValue "uidNumber" "userName")]
+      (first renderSearchError $ ldapToScim Strict conf searchEntry)
+        `shouldBe` Left (renderSearchError [(searchEntry, MissingMandatoryValue "uidNumber" "userName")])
 
     it "helpful error message if scim userName (wire handle) field occurs twice" $ do
       let displayName = "John Doe"
@@ -81,7 +83,8 @@ main = hspec $ do
               & addAttr "email" email
 
       conf <- Yaml.decodeThrow confYaml
-      ldapToScim Strict conf searchEntry `shouldBe` Left [(searchEntry, WrongNumberOfAttrValues "uidNumber" "userName" "1" 2)]
+      (first renderSearchError $ ldapToScim Strict conf searchEntry)
+        `shouldBe` Left (renderSearchError [(searchEntry, WrongNumberOfAttrValues "uidNumber" "userName" "1" 2)])
 
 searchEntryEmpty :: SearchEntry
 searchEntryEmpty = SearchEntry (Dn "") []
