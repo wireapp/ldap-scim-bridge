@@ -73,6 +73,13 @@ docker run -it --network=host \
   ldap-scim-bridge /mnt/config.yaml
 ```
 
+## developers
+
+For running unit tests, try `cabal test`.
+
+Integration tests is a bit more involved, since we need ldap and
+wire-server running.  See `./examples/wire-server/run.sh`.
+
 ## future work
 
 See https://github.com/wireapp/ldap-scim-bridge/issues
