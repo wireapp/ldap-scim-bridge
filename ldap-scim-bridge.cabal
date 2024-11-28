@@ -9,7 +9,7 @@ license:            AGPL-3.0-or-later
 license-file:       LICENSE
 author:             wire.com
 maintainer:         backend@wire.com
-copyright:          (c) 2024 wire.com
+copyright:          (c) 2021 - 2024 wire.com
 category:           System
 build-type:         Simple
 extra-doc-files:

@@ -192,7 +192,7 @@ renderSearchError :: [(SearchEntry, MappingError)] -> String
 renderSearchError = show . fmap (\(s, m) -> (s, renderMappingError m))
 
 data FieldMapping = FieldMapping
-  { -- | This is the scim label (the ldap label is in the key of the `Mapping`)
+  { -- | This is the SCIM label (the LDAP label is in the key of the `Mapping`)
     fieldMappingLabel :: Text,
     fieldMappingFun ::
       [Text] ->
