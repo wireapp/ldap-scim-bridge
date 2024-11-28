@@ -1,5 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 
+import Data.Bifunctor (first)
 import Data.ByteString (ByteString)
 import Data.Function ((&))
 import Data.Maybe (maybeToList)
@@ -67,13 +68,32 @@ main = hspec $ do
               & addAttr "email" email
 
       conf <- Yaml.decodeThrow confYaml
-      ldapToScim Strict conf searchEntry `shouldBe` Left [(searchEntry, MissingMandatoryValue "userName")]
+      (first renderSearchError $ ldapToScim Strict conf searchEntry)
+        `shouldBe` Left (renderSearchError [(searchEntry, MissingMandatoryValue "uidNumber" "userName")])
+
+    it "helpful error message if scim userName (wire handle) field occurs twice" $ do
+      let displayName = "John Doe"
+      let userName = "jdoe"
+      let externalId = "jdoe@nodomain"
+      let email = "jdoe@nodomain"
+      let searchEntry =
+            searchEntryEmpty
+              & addAttr "displayName" displayName
+              & addAttrs "uidNumber" ["1", "2"]
+              & addAttr "email" email
+
+      conf <- Yaml.decodeThrow confYaml
+      (first renderSearchError $ ldapToScim Strict conf searchEntry)
+        `shouldBe` Left (renderSearchError [(searchEntry, WrongNumberOfAttrValues "uidNumber" "userName" "1" 2)])
 
 searchEntryEmpty :: SearchEntry
 searchEntryEmpty = SearchEntry (Dn "") []
 
 addAttr :: Text -> Text -> SearchEntry -> SearchEntry
-addAttr key value (SearchEntry dn attrs) = SearchEntry dn ((Attr key, [cs value]) : attrs)
+addAttr key value = addAttrs key [value]
+
+addAttrs :: Text -> [Text] -> SearchEntry -> SearchEntry
+addAttrs key values (SearchEntry dn attrs) = SearchEntry dn ((Attr key, cs <$> values) : attrs)
 
 mkExpectedScimUser :: Text -> Text -> Text -> Text -> Maybe Text -> Scim.User ScimTag
 mkExpectedScimUser displayName userName externalId email mRole =
@@ -91,7 +111,7 @@ mkExpectedScimUser displayName userName externalId email mRole =
       locale = Nothing,
       active = Nothing,
       password = Nothing,
-      emails = [Email {typ = Nothing, Scim.value = EmailAddress2 {unEmailAddress = unsafeEmailAddress (cs local) (cs domain)}, primary = Nothing}],
+      emails = [Email {typ = Nothing, Scim.value = EmailAddress {unEmailAddress = unsafeEmailAddress (cs local) (cs domain)}, primary = Nothing}],
       phoneNumbers = [],
       ims = [],
       photos = [],

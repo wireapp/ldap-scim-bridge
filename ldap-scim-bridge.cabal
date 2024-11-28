@@ -1,15 +1,15 @@
 cabal-version:      2.4
 name:               ldap-scim-bridge
-version:            0.9
+version:            0.10
 synopsis:           See README for synopsis
 description:        See README for description
 homepage:           https://github.com/wireapp/ldap-scim-bridge
 bug-reports:        https://github.com/wireapp/ldap-scim-bridge/issues
 license:            AGPL-3.0-or-later
 license-file:       LICENSE
-author:             Matthias Fischmann
-maintainer:         Matthias Fischmann <mf@zerobuzz.net>
-copyright:          (c) 2021 wire.com
+author:             wire.com
+maintainer:         backend@wire.com
+copyright:          (c) 2021 - 2024 wire.com
 category:           System
 build-type:         Simple
 extra-doc-files:
@@ -22,7 +22,7 @@ extra-source-files:
   examples/wire-server/run.sh
   examples/wire-server/runlog
 
-tested-with:        GHC ==8.8.3
+tested-with:        GHC ==9.6.6
 
 source-repository head
   type:     git
@@ -30,27 +30,27 @@ source-repository head
 
 common common-options
   build-depends:
-    , aeson                 >=2.1.2   && <2.2
-    , aeson-pretty          >=0.8.10  && <0.9
-    , base                  >=4.17.2  && <4.18
-    , bytestring            >=0.11.5  && <0.12
-    , containers            >=0.6.7   && <0.7
-    , email-validate        >=2.3.2   && <2.4
-    , hscim                 >=0.4.0.2 && <0.5
-    , http-client           >=0.7.16  && <0.8
-    , http-client-tls       >=0.3.6   && <0.4
-    , http-types            >=0.12.4  && <0.13
-    , ldap-client           >=0.4.2   && <0.5
-    , network               >=3.1.4   && <3.2
-    , relude                >=1.2.1   && <1.3
-    , servant               >=0.19.1  && <0.20
-    , servant-client        >=0.19    && <0.20
-    , servant-client-core   >=0.19    && <0.20
-    , string-conversions    >=0.4.0   && <0.5
-    , text                  >=2.0.2   && <2.1
-    , tinylog               >=0.15.0  && <0.16
-    , unordered-containers  >=0.2.20  && <0.3
-    , yaml                  >=0.11.11 && <0.12
+    , aeson >= 2.1.2 && < 2.2
+    , aeson-pretty >= 0.8.10 && < 0.9
+    , base >= 4.17 && < 4.21
+    , bytestring >= 0.11.5 && < 0.12
+    , containers >= 0.6.7 && < 0.7
+    , email-validate >= 2.3.2 && < 2.4
+    , hscim >= 0.4.0.6 && < 0.5
+    , http-client >= 0.7.16 && < 0.8
+    , http-client-tls >= 0.3.6 && < 0.4
+    , http-types >= 0.12.4 && < 0.13
+    , ldap-client >= 0.4.2 && < 0.5
+    , network >= 3.2.6 && < 3.3
+    , relude >= 1.2.1 && < 1.3
+    , servant >= 0.19 && < 0.21
+    , servant-client >= 0.19 && < 0.21
+    , servant-client-core >= 0.19 && < 0.21
+    , string-conversions >= 0.4.0 && < 0.5
+    , text >= 2.0.2 && < 2.1
+    , tinylog >= 0.15.0 && < 0.16
+    , unordered-containers >= 0.2.20 && < 0.3
+    , yaml >= 0.11.11 && < 0.12
 
   mixins:
     base hiding (Prelude),
@@ -123,16 +123,16 @@ test-suite ldap-scim-bridge-test
   type:             exitcode-stdio-1.0
   build-depends:
     , base
-    , bytestring          >=0.11.5  && <0.12
-    , email-validate      >=2.3.2   && <2.4
-    , hscim               >=0.4.0.2 && <0.5
+    , bytestring
+    , email-validate
+    , hscim
     , hspec
-    , ldap-client         >=0.4.2   && <0.5
+    , ldap-client
     , ldap-scim-bridge
     , QuickCheck
     , string-conversions
-    , text                >=2.0.2   && <2.1
-    , yaml                >=0.11.11 && <0.12
+    , text
+    , yaml
 
   hs-source-dirs:   test
   default-language: Haskell2010
