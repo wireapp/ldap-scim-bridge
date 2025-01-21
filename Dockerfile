@@ -6,7 +6,14 @@ WORKDIR /opt/ldap-scim-bridge
 COPY ./ldap-scim-bridge.cabal /opt/ldap-scim-bridge/ldap-scim-bridge.cabal
 COPY ./cabal.project /opt/ldap-scim-bridge/cabal.project
 
-RUN cabal v2-update && apt-get update && apt-get dist-upgrade
+RUN \
+  cabal v2-update && \
+  echo 'deb http://ftp.de.debian.org/debian/ bookworm main contrib non-free' > /etc/apt/source.list && \
+  echo 'deb-src http://ftp.de.debian.org/debian/ bookworm main contrib non-free' >> /etc/apt/source.list && \
+  echo 'deb http://security.debian.org/debian-security bookworm-security main contrib non-free' >> /etc/apt/source.list && \
+  echo 'deb-src http://security.debian.org/debian-security bookworm-security main contrib non-free' >> /etc/apt/source.list' && \
+  apt-get update && \
+  apt-get dist-upgrade --yes
 
 # Docker will cache this command as a layer, freeing us up to
 # modify source code without re-installing dependencies
