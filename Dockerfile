@@ -6,7 +6,7 @@ WORKDIR /opt/ldap-scim-bridge
 COPY ./ldap-scim-bridge.cabal /opt/ldap-scim-bridge/ldap-scim-bridge.cabal
 COPY ./cabal.project /opt/ldap-scim-bridge/cabal.project
 
-RUN cabal v2-update
+RUN cabal v2-update && apt-get update && apt-get dist-upgrade
 
 # Docker will cache this command as a layer, freeing us up to
 # modify source code without re-installing dependencies
