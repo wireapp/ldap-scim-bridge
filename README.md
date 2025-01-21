@@ -80,6 +80,18 @@ For running unit tests, try `cabal test`.
 Integration tests is a bit more involved, since we need ldap and
 wire-server running.  See `./examples/wire-server/run.sh`.
 
+## cutting a new release
+
+- Make sure master is up to date
+- `git tag v0.*`
+- `git push --tags`
+
+This will trigger a github workflow that builds and uploads the docker
+images to quay.io.
+
+- consider releasing to hackage (see `./admin/publish.sh`)
+- bump version in cabal file to upcoming version
+
 ## future work
 
 See https://github.com/wireapp/ldap-scim-bridge/issues

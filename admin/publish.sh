@@ -16,4 +16,3 @@ docker build -t ldap-scim-bridge:${VERSION} .
 docker tag ldap-scim-bridge:${VERSION} quay.io/wire/ldap-scim-bridge:${VERSION}
 docker login quay.io
 docker push quay.io/wire/ldap-scim-bridge:${VERSION}
-
