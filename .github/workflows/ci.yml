@@ -6,7 +6,7 @@ on:
   push:
     branches: [master]
     tags:
-    - 'v*'
+      - "v*"
   workflow_dispatch:
 
 # INFO: The following configuration block ensures that only one build runs per branch,
@@ -17,103 +17,100 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  lint:
+    name: General linting steps
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v27
+
+      - name: nix flake check
+        run: nix flake check
+
+      - name: treefmt - check format
+        run: nix fmt -- --ci
+
   build:
-    name: GHC ${{ matrix.ghc-version }} on ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
+    name: Haskell build (GHC 9.6 - default env)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v27
+
+      - name: Build
+        run: nix develop --command bash -c "cabal build all"
+
+      - name: Run tests
+        run: nix develop --command bash -c "cabal test all"
+
+      - name: Check cabal file
+        run: nix develop --command bash -c "cabal check"
+
+  build-ghc-matrix:
+    name: Haskell build with several GHC versions (some are expected to fail)
+    if: contains(github.event.pull_request.labels.*.name, 'ghc-matrix')
+    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest]
-        ghc-version: ['9.6.6']
-        cabal: ['3.10.3.0']
+        ghc: ["ghc92", "ghc94", "ghc96", "ghc98", "ghc910"]
 
     steps:
-    - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v27
 
-    - name: Set up GHC ${{ matrix.ghc-version }}
-      uses: haskell-actions/setup@v2
-      id: setup
-      with:
-        ghc-version: ${{ matrix.ghc-version }}
-        # Defaults, added for clarity:
-        cabal-version: ${{ matrix.cabal }}
-        cabal-update: true
+      - name: Build
+        run: nix develop .\#$GHC_VERSION --command bash -c "cabal build all"
+        env:
+          GHC_VERSION: ${{ matrix.ghc }}
 
-    - name: Configure the build
-      run: |
-        cabal configure --enable-tests --enable-benchmarks --disable-documentation
-        cabal build all --dry-run
-      # The last step generates dist-newstyle/cache/plan.json for the cache key.
+      - name: Run tests
+        run: nix develop .\#$GHC_VERSION --command bash -c "cabal test all"
+        env:
+          GHC_VERSION: ${{ matrix.ghc }}
 
-    - name: Restore cached dependencies
-      uses: actions/cache/restore@v3
-      id: cache
-      env:
-        key: ${{ runner.os }}-ghc-${{ steps.setup.outputs.ghc-version }}-cabal-${{ steps.setup.outputs.cabal-version }}
-      with:
-        path: ${{ steps.setup.outputs.cabal-store }}
-        key: ${{ env.key }}-plan-${{ hashFiles('**/plan.json') }}
-        restore-keys: ${{ env.key }}-
-
-    - name: Install dependencies
-      # If we had an exact cache hit, the dependencies will be up to date.
-      if: steps.cache.outputs.cache-hit != 'true'
-      run: cabal build all --only-dependencies
-
-    # Cache dependencies already here, so that we do not have to rebuild them should the subsequent steps fail.
-    - name: Save cached dependencies
-      uses: actions/cache/save@v3
-      # If we had an exact cache hit, trying to save the cache would error because of key clash.
-      if: steps.cache.outputs.cache-hit != 'true'
-      with:
-        path: ${{ steps.setup.outputs.cabal-store }}
-        key: ${{ steps.cache.outputs.cache-primary-key }}
-
-    - name: Build
-      run: cabal build all
-
-    - name: Run tests
-      run: cabal test all
-
-    - name: Check cabal file
-      run: cabal check
+      - name: Check cabal file
+        run: nix develop .\#$GHC_VERSION --command bash -c "cabal check"
+        env:
+          GHC_VERSION: ${{ matrix.ghc }}
 
   publish:
+    name: Build and push docker image
     # needs : build
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v')
 
     steps:
-    - uses: actions/checkout@v2
+      - uses: actions/checkout@v2
+      - uses: cachix/install-nix-action@v27
 
-    - name: Set tag output
-      id: vars
-      run: echo "tag=${GITHUB_REF#refs/*/v}" >> $GITHUB_OUTPUT
-    - name: Check tag
-      run: echo ${TAG}
-      env:
-        TAG: ${{ steps.vars.outputs.tag }}
+      - name: Set tag output
+        id: vars
+        run: echo "tag=${GITHUB_REF#refs/*/v}" >> $GITHUB_OUTPUT
+      - name: Check tag
+        run: echo ${TAG}
+        env:
+          TAG: ${{ steps.vars.outputs.tag }}
 
-    - name: Build Image
-      id: build-image
-      uses: redhat-actions/buildah-build@v2
-      with:
-        image: ldap-scim-bridge
-        tags: ${{ steps.vars.outputs.tag }}
-        dockerfiles: |
-          ./Dockerfile
+      - name: Build and import image
+        run: |
+          nix build .\#dockerImage -o image.tgz
+          docker load -i image.tgz
+          docker tag ldap-scim-bridge:build ldap-scim-bridge:$TAG
+        env:
+          TAG: ${{ steps.vars.outputs.tag }}
 
-    - name: Push To quay.io
-      id: push-to-quay
+      - name: Push To quay.io
+        id: push-to-quay
 
-      uses: redhat-actions/push-to-registry@v2
-      with:
-        image: ${{ steps.build-image.outputs.image }}
-        tags: ${{ steps.build-image.outputs.tags }}
-        registry: quay.io/wire
-        username: wire+ldapscimbridge
-        password: ${{ secrets.REGISTRY_PASSWORD }}
+        uses: redhat-actions/push-to-registry@v2
+        with:
+          image: ldap-scim-bridge
+          tags: ${{ steps.vars.outputs.tag }}
+          registry: quay.io/wire
+          username: wire+ldapscimbridge
+          password: ${{ secrets.REGISTRY_PASSWORD }}
 
-
-    - name: Print image url
-      run: echo "Image pushed to ${{ steps.push-to-quay.outputs.registry-paths }}"
+      - name: Print image url
+        run: echo "Image pushed to ${{ steps.push-to-quay.outputs.registry-paths }}"
