@@ -3,6 +3,11 @@
 `ldap-scim-bridge` uses [PVP][1]-compatible versioning.
 The changelog is available [on GitHub][2].
 
+## 0.11
+
+  - Migrate project setup and CI to use Nix flake
+  - Remove old `Dockerfile` (build docker image with Nix)
+
 ## 0.10
 
 - More helpful error messages on bad LDAP input records.
