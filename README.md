@@ -80,6 +80,51 @@ For running unit tests, try `cabal test`.
 Integration tests is a bit more involved, since we need ldap and
 wire-server running.  See `./examples/wire-server/run.sh`.
 
+### Nix
+
+`direnv` (`.envrc`) calls the Nix flake to provide a development environment.
+Another way to get into this environment is to call:
+
+```sh
+nix develop
+```
+
+To develop with a specific GHC version call e.g.:
+```sh
+nix develop .\#ghc96
+```
+
+The Docker image can be build and loaded with:
+
+```sh
+nix build .\#dockerImage
+docker load -i result
+```
+
+To use Treefmt to format the whole project (according to the `./treefmt.toml`)
+run:
+
+```sh
+nix fmt
+```
+
+To validate the Nix code itself:
+
+```sh
+nix flake check
+```
+
+To update the Nix dependencies:
+```sh
+nix flake update
+```
+
+### CI
+
+Tag your PR with the label `ghc-matrix` to build this package with many
+different GHC versions. Most are unfortunately - shame on us! - expected to
+fail.
+
 ## cutting a new release
 
 - Make sure master is up to date
