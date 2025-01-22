@@ -56,3 +56,5 @@ TAGS
 
 # nix
 .direnv
+# default nix build output (symlink)
+result
