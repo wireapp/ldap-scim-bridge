@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # put this to work with https://github.com/wireapp/wire-server
 #
@@ -65,8 +65,12 @@ function scaffolding2() {
 function scaffolding_spar() {
   if ( curl -s $BRIG_URL/i/status ); then
     WIRE_USER=$("${WIRE_SERVER_PATH}"/hack/bin/create_test_team_admins.sh -c)
-    WIRE_USERID=$(echo "$WIRE_USER" | sed 's/^\([^,]\+\),\([^,]\+\),\([^,]\+\)$/\1/')
-    WIRE_PASSWD=$(echo "$WIRE_USER" | sed 's/^\([^,]\+\),\([^,]\+\),\([^,]\+\)$/\3/')
+    # shellcheck disable=SC2001
+    # (style): See if you can use ${variable//search/replace} instead.
+    WIRE_USERID=$(echo "$WIRE_USER" | sed 's/^\([^,]\+\),\([^,]\+\),\([^,]\+\)$/\1/') 
+    # shellcheck disable=SC2001
+    # (style): See if you can use ${variable//search/replace} instead.
+    WIRE_PASSWD=$(echo "$WIRE_USER" | sed 's/^\([^,]\+\),\([^,]\+\),\([^,]\+\)$/\3/') 
     WIRE_TEAMID=$(curl -s -H'content-type: application/json' -H'Z-User: '"${WIRE_USERID}" "$BRIG_URL/self" | jq .team | xargs echo)
 
     # create a saml idp (if we don't, users will not be created, but invited, which would make the following more awkward to write down).
