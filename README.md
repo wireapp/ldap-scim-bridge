@@ -38,14 +38,40 @@ see https://github.com/wireapp/ldap-scim-bridge for a sample config.
 See [ldif](./ldif/README.md) for a few sample user records to play with.
 A working example can be found in `./examples/wire-server`.
 
-## use via docker
+## usage
 
 If you have gotten here as a
 [wire-server](https://github.com/wireapp/wire-server) administrator and want to
-use this to populate your teams, you can use the docker image we're building
-from this repo. As we do not guarantee full backwards-compatibility (there may
-be breaking changes e.g. regarding CLI options), please always provide the
-image's tag. 
+use this to populate your teams, you've got three options to run
+`ldap-scim-bridge`:
+
+1. Execute the plain executable.
+1. Run the Docker (container) image.
+1. Deploy it via the Helm chart.
+
+The `ldap-scim-bridge` can be configured to use unencrypted connections (by
+setting the configuration options `ldapSource.tls` or `scimTarget.tls` to
+`false`.) Please only do so if the connection target (Wire or LDAP server) and
+`ldap-scim-bridge` run in the same trusted network. This can be accomplished by
+running the components e.g. in the same Kubernetes cluster or using a VPN.
+
+In general, `ldapSource.tls` or `scimTarget.tls` should be set to true in a
+production-level setup.
+
+### execute plain executable
+
+The easiest way is to leave building the executable and running it in the right
+context to Nix; e.g.:
+
+```sh
+nix shell --command bash -c "ldap-scim-bridge examples/wire-server/conf1.yaml"
+```
+
+### docker
+
+You can use the docker image we're building from this repo. As we do not
+guarantee full backwards-compatibility (there may be breaking changes e.g.
+regarding CLI options), please always provide the image's tag. 
 
 ```sh
 docker pull quay.io/wire/ldap-scim-bridge:$IMAGE_TAG
@@ -65,9 +91,7 @@ docker run -it --network=host \
 
 This should work fine for Windows if you make sure the file path under `src` points to the right place.  You may need to you `\` instead of `/`.
 
-The connection to Wire is not encrypted.  This tool is made for running inside the trusted network the backend is running in.  If you need to protect this connection you can use an off-the-shelf TLS tunnel or VPN solution.
-
-The connection to the LDAP source is TLS-encrypted.  If you need to add trusted certificates to the store in `/etc/ssl/certs/`, you can just mount it:
+If you need to add trusted certificates for TLS-encrypted connections to the store in `/etc/ssl/certs/`, you can just mount it:
 
 ```sh
 docker run -it --network=host \
@@ -76,6 +100,13 @@ docker run -it --network=host \
   quay.io/wire/ldap-scim-bridge:$IMAGE_TAG \
   ldap-scim-bridge /mnt/config.yaml
 ```
+
+### helm
+
+There is a Helm chart to deploy `ldap-scim-bridge` to a Kubernetes cluster:
+https://github.com/wireapp/wire-server/tree/master/charts/ldap-scim-bridge
+
+Please refer to its documentation.
 
 ## developers
 
