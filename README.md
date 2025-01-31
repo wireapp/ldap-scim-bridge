@@ -51,7 +51,7 @@ use this to populate your teams, you've got three options to run
 
 The `ldap-scim-bridge` can be configured to use unencrypted connections (by
 setting the configuration options `ldapSource.tls` or `scimTarget.tls` to
-`false`.) Please only do so if the connection target (Wire or LDAP server) and
+`false`.) Please *ONLY* do so if the connection target (Wire or LDAP server) and
 `ldap-scim-bridge` run in the same trusted network. This can be accomplished by
 running the components e.g. in the same Kubernetes cluster or using a VPN.
 
