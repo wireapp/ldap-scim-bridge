@@ -4,12 +4,14 @@
   inputs = {
     nixpkgs.url = "nixpkgs/nixos-24.11";
     flake-utils.url = "github:numtide/flake-utils";
+    tom-bombadil.url = "github:wireapp/tom-bombadil";
   };
 
   outputs =
     { self
     , nixpkgs
     , flake-utils
+    , tom-bombadil
     }:
     flake-utils.lib.eachDefaultSystem (
       system:
@@ -93,9 +95,14 @@
             };
           })
           ghcVersions);
+
+        bomDependencies = tom-bombadil.lib.${system}.bomDependenciesDrv pkgs [ haskellPackages.ldap-scim-bridge ] haskellPackages;
       in
       {
-        packages.default = haskellPackages.ldap-scim-bridge;
+        packages = {
+          default = haskellPackages.ldap-scim-bridge;
+          bomDependencies = bomDependencies;
+        };
 
         # Development shell with required dependencies
         devShells = {

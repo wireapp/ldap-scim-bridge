@@ -75,6 +75,40 @@ jobs:
         env:
           GHC_VERSION: ${{ matrix.ghc }}
 
+  bill-of-materials:
+    name: Build and push BOM file
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+
+    steps:
+      - uses: actions/checkout@v2
+      - uses: cachix/install-nix-action@v27
+
+      - name: Set tag output
+        id: vars
+        run: echo "tag=${GITHUB_REF#refs/*/v}" >> $GITHUB_OUTPUT
+      - name: Check tag
+        run: echo ${TAG}
+        env:
+          TAG: ${{ steps.vars.outputs.tag }}
+
+      - name: Build BOM dependencies
+        run: nix build .\#bomDependencies
+
+      - name: Build BOM file
+        run: nix run 'github:wireapp/tom-bombadil#create-sbom' -- --root-package-name "ldap-scim-bridge"
+
+      - name: Push BOM file
+        run: >-
+          nix run 'github:wireapp/tom-bombadil#upload-bom' --
+          --project-name "ldap-scim-bridge" 
+          --project-version "$TAG" 
+          --auto-create 
+          --bom-file ./sbom.json
+        env:
+          TAG: ${{ steps.vars.outputs.tag }}
+          DEPENDENCY_TRACK_API_KEY: ${{ secrets.DEPENDENCY_TRACK_API_KEY }}
+
   publish:
     name: Build and push docker image
     # needs : build

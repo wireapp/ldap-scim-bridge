@@ -58,3 +58,6 @@ TAGS
 .direnv
 # default nix build output (symlink)
 result
+
+# SBOM file - https://github.com/wireapp/tom-bombadil
+sbom.json
