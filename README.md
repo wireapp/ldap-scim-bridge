@@ -135,8 +135,8 @@ ldapSource:
   # bug report.
   tls: true
 
-  # login details (distinguished name )
-  dn: "cn=admin,dc=nodomain"  #
+  # login details (distinguished name)
+  dn: "cn=admin,dc=nodomain"
   password: "***"
 
   # utf8 or latin1.  if you're unsure, pick utf8, and if you get
@@ -176,7 +176,7 @@ scimTarget:
 ```
 
 Finally, you need to decide which LDAP attributes are written into
-which SCIM attributes.  `mapping` is simply a yaml record with SCIM
+which SCIM attributes.  `mapping` is simply a YAML record with SCIM
 attributes as keys and associated LDAP attributes as string values:
 
 ```
