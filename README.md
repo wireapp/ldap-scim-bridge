@@ -108,6 +108,95 @@ https://github.com/wireapp/wire-server/tree/master/charts/ldap-scim-bridge
 
 Please refer to its documentation.
 
+## the config file
+
+The config file consists of three main sections:
+
+```
+ldapSource: # where does the ldap data come from?
+  [...]
+scimTarget: # where does it go?
+  [...]
+mapping: # which ldap attributes map on which scim attributes?
+  [...]
+logLevel: "Debug"  # one of Trace,Debug,Info,Warn,Error,Fatal; `Fatal` is least noisy, `Trace` most.
+```
+
+The full example is from [here](./examples/wire-server/conf2.yaml).
+Let's go through each section separately.
+
+```
+ldapSource:
+  host: "localhost"
+  port: 389
+
+  # Whether to use TLS (with default settings).  If this doesn't work,
+  # set to false, use a tls tunnel on the host OS, and please file a
+  # bug report.
+  tls: true
+
+  # login details (distinguished name )
+  dn: "cn=admin,dc=nodomain"  #
+  password: "***"
+
+  # utf8 or latin1.  if you're unsure, pick utf8, and if you get
+  # strange characters in the scim data, switch to latin1.
+  codec: "utf8"
+
+  # search query for retrieving the source data
+  search:
+    base: "ou=NoPeople,dc=nodomain"
+    objectClass: "account"
+```
+
+In order to remove accounts in SCIM that have been removed in LDAP,
+you need to specify the LDAP location of the deleted users, plus an
+optional filter for which entries should be considered deleted:
+
+```
+  deleteFromDirectory:
+    base: "ou=DeletedPeople,dc=nodomain"
+    objectClass: "account"
+  deleteOnAttribute:
+    key: "deleted"
+    value: "true"
+```
+
+Target is a bit more familiar if you are used to REST APIs:
+
+```
+scimTarget:
+  host: "localhost"
+  port: 8088
+  tls: true
+  # http request root path of the SCIM API.
+  path: "/scim/v2"
+  # the token you have created in the team management app.
+  token: "Bearer RRhtCL/VF9IYcmb3E9zaDo3rP6w3mZ3Ww3da7d2RDR8="
+```
+
+Finally, you need to decide which LDAP attributes are written into
+which SCIM attributes.  `mapping` is simply a yaml record with SCIM
+attributes as keys and associated LDAP attributes as string values:
+
+```
+mapping:
+  userName: "uidNumber"
+  externalId: "email"
+  email: "email"
+```
+
+In this example, `uidNumber` in LDAP is written into SCIM attribute
+`userName`; `email` is written into `externalId`, and so on.
+
+Supported SCIM attributes as are:
+
+- `displayName`
+- `userName`
+- `externalId`
+- `email`
+- `roles`
+
 ## developers
 
 For running unit tests, try `cabal test`.
