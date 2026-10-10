@@ -76,7 +76,7 @@ docker pull quay.io/wire/ldap-scim-bridge:$IMAGE_TAG
 ```
 
 Usually, `IMAGE_TAG` should be the latest release name without the `v`-prefix.
-E.g. for `v0.10.3` the `IMAGE_TAG` is `0.10.3`.
+E.g. for `v0.12.0` the `IMAGE_TAG` is `0.12.0`.
 
 You need to create a config file that contains your setup.  If in doubt, you can start with [this example](./examples/wire-server/conf1.yaml), or [this one](./examples/wire-server/conf2.yaml).  Name the file `config.yaml` and place it into `/config-path`.
 
@@ -101,12 +101,26 @@ docker run -it --network=host \
 
 ### helm
 
-There is a Helm chart to deploy `ldap-scim-bridge` to a Kubernetes cluster:
-https://github.com/wireapp/wire-server/tree/master/charts/ldap-scim-bridge
+The Helm chart in [`charts/ldap-scim-bridge`](./charts/ldap-scim-bridge)
+deploys `ldap-scim-bridge` as a Kubernetes CronJob. Releases are published at
+`oci://quay.io/wire/charts/stable/ldap-scim-bridge`, with the same version as
+the image:
 
-Please refer to its documentation.
+```sh
+helm upgrade --install -n wire ldap-scim-bridge \
+  oci://quay.io/wire/charts/stable/ldap-scim-bridge --version <version> \
+  -f my-values.yaml
+```
+
+See the [chart README](./charts/ldap-scim-bridge/README.md) and
+[docs/configuration.md](./docs/configuration.md). Until 5.x the chart was
+published from wire-server, under the wire-server version.
 
 ## the config file
+
+Every key, with its type and whether it is required, is listed in
+[docs/configuration.md](./docs/configuration.md). The bridge reads no
+environment variables.
 
 The config file consists of three main sections:
 
@@ -247,17 +261,42 @@ Tag your PR with the label `ghc-matrix` to build this package with many
 different GHC versions. Most are unfortunately - shame on us! - expected to
 fail.
 
-## cutting a new release
+### Commit messages
 
-- Make sure master is up to date
-- `git tag v0.*`
-- `git push --tags`
+Commit subjects follow [Conventional Commits](https://www.conventionalcommits.org):
+`type(scope): summary`, with `feat`, `fix`, `docs`, `ci`, `build`, `chore`,
+`refactor` or `test`. Release changelogs are generated from them, and commits
+without a type are left out. Flag a breaking change with `[breaking]` at the
+end of the subject **and** a `BREAKING CHANGE: <what operators must do>`
+footer, so the release manager surfaces it.
 
-This will trigger a github workflow that builds and uploads the docker
-images to quay.io.
+## versions and releases
 
-- consider releasing to hackage (`cabal sdist`, then `cabal upload`)
-- bump version in cabal file to upcoming version
+`dev` is the trunk; `release/X.Y` branches are cut at each `X.Y.0` release.
+Versions follow [Semantic Versioning](https://semver.org) (see
+[CHANGELOG.md](./CHANGELOG.md)), and the image, the chart and its `appVersion`
+always carry the same version.
+
+- **Dev builds**: every merge on `dev` or `release/*` (and any manual run of
+  the `Build` workflow) publishes `quay.io/wire/ldap-scim-bridge:<version>` and
+  `oci://quay.io/wire/charts/dev/ldap-scim-bridge` under a version computed from
+  the last tag, e.g. `0.12.1-20261012093000.gabcdef0`, and declares it to the
+  release managers. Nobody picks these versions.
+- **Releases** (`X.Y.Z-rc.N`, `X.Y.Z`): nobody pushes tags by hand.
+  1. Merge the release note `docs/release-notes/<X.Y.Z>.md` (required for a GA)
+     and the version in `ldap-scim-bridge.cabal` and `CHANGELOG.md`.
+  2. Run the `Prepare release` workflow (or request the release from the Wire
+     release manager): it builds the image and the chart once and opens a
+     draft GitHub release.
+  3. A release manager approves the `release-publication` environment: the
+     `Publish release` workflow promotes those exact artifacts, publishes the
+     release (which creates the `vX.Y.Z` tag), uploads the SBOM to
+     Dependency-Track and declares the release.
+
+  Pushing a `v*` tag by hand publishes nothing: the `Build` workflow only
+  checks that the tag's image and chart exist.
+- Hackage is not part of the pipeline: `cabal sdist`, then `cabal upload`, by
+  hand.
 
 ## future work
 
