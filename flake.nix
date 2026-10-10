@@ -76,7 +76,7 @@
         # the issues...
         ghcVersions = [ "ghc92" "ghc94" "ghc96" "ghc98" "ghc910" ];
 
-        haskellPackagesFor = ghc_version: (pkgs.haskell.packages.${ghc_version}).override haskellPackagesOverlay;
+        haskellPackagesFor = ghc_version: pkgs.haskell.packages.${ghc_version}.override haskellPackagesOverlay;
         additionalDevShells = builtins.listToAttrs (map
           (ghc_version: {
             name = ghc_version;
@@ -101,7 +101,7 @@
       {
         packages = {
           default = haskellPackages.ldap-scim-bridge;
-          bomDependencies = bomDependencies;
+          inherit bomDependencies;
         };
 
         # Development shell with required dependencies
