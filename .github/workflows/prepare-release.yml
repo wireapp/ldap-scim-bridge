@@ -280,7 +280,7 @@ jobs:
 
       - name: Validate the release declaration
         if: inputs.release_declaration != ''
-        uses: wireapp/wire-rm-actions/release-declaration@bb09ea0019420aea60d39a8905a83724de05645f # main  # TODO(WPB-29309): pin vX.Y.Z
+        uses: wireapp/wire-rm-actions/release-declaration@1f8834a0c36154a3e9a6ab83b38604e171360082 # dev  # TODO(WPB-29309): pin vX.Y.Z
         with:
           file: ${{ runner.temp }}/release/release-declaration.json
           component: ldap-scim-bridge
@@ -422,7 +422,7 @@ jobs:
 
       - name: Changelog
         id: changelog
-        uses: wireapp/wire-rm-actions/changelog@bb09ea0019420aea60d39a8905a83724de05645f # main  # TODO(WPB-29309): pin vX.Y.Z
+        uses: wireapp/wire-rm-actions/changelog@1f8834a0c36154a3e9a6ab83b38604e171360082 # dev  # TODO(WPB-29309): pin vX.Y.Z
         with:
           from-tag: ${{ steps.version.outputs.from_tag }}
           to-ref: ${{ steps.source.outputs.sha }}

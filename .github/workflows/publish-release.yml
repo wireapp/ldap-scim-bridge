@@ -478,7 +478,7 @@ jobs:
       # repeat). A failure warns and never fails the publication.
       - name: Declare the release to the release managers
         if: ${{ !cancelled() && steps.publish_release.outcome == 'success' }}
-        uses: wireapp/wire-rm-actions/notify-rm@bb09ea0019420aea60d39a8905a83724de05645f # main  # TODO(WPB-29309): pin vX.Y.Z
+        uses: wireapp/wire-rm-actions/notify-rm@1f8834a0c36154a3e9a6ab83b38604e171360082 # dev  # TODO(WPB-29309): pin vX.Y.Z
         with:
           rm-staging-url: ${{ vars.RM_STAGING_URL }}
           rm-staging-token: ${{ secrets.RM_STAGING_TOKEN }}

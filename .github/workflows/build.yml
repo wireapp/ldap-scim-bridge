@@ -46,7 +46,7 @@ jobs:
 
       - name: Compute the version
         id: version
-        uses: wireapp/wire-rm-actions/version@bb09ea0019420aea60d39a8905a83724de05645f # main  # TODO(WPB-29309): pin vX.Y.Z
+        uses: wireapp/wire-rm-actions/version@1f8834a0c36154a3e9a6ab83b38604e171360082 # dev  # TODO(WPB-29309): pin vX.Y.Z
         with:
           release-branches: ^(dev|release/.+)$
           tag-prefix: v
@@ -90,7 +90,7 @@ jobs:
 
       - name: Publish the chart
         id: chart
-        uses: wireapp/wire-rm-actions/publish-chart@bb09ea0019420aea60d39a8905a83724de05645f # main  # TODO(WPB-29309): pin vX.Y.Z
+        uses: wireapp/wire-rm-actions/publish-chart@1f8834a0c36154a3e9a6ab83b38604e171360082 # dev  # TODO(WPB-29309): pin vX.Y.Z
         with:
           chart-path: ${{ env.CHART_PATH }}
           version: ${{ steps.version.outputs.version }}
@@ -102,7 +102,7 @@ jobs:
       # Last step. An unset URL skips that release manager with a warning; a
       # failed declaration warns and keeps the build green.
       - name: Declare the version to the release managers
-        uses: wireapp/wire-rm-actions/notify-rm@bb09ea0019420aea60d39a8905a83724de05645f # main  # TODO(WPB-29309): pin vX.Y.Z
+        uses: wireapp/wire-rm-actions/notify-rm@1f8834a0c36154a3e9a6ab83b38604e171360082 # dev  # TODO(WPB-29309): pin vX.Y.Z
         with:
           rm-staging-url: ${{ vars.RM_STAGING_URL }}
           rm-staging-token: ${{ secrets.RM_STAGING_TOKEN }}
@@ -133,7 +133,7 @@ jobs:
       # Fails on a tag that is not a GA or pre-release version.
       - name: Read the version from the tag
         id: version
-        uses: wireapp/wire-rm-actions/version@bb09ea0019420aea60d39a8905a83724de05645f # main  # TODO(WPB-29309): pin vX.Y.Z
+        uses: wireapp/wire-rm-actions/version@1f8834a0c36154a3e9a6ab83b38604e171360082 # dev  # TODO(WPB-29309): pin vX.Y.Z
         with:
           tag-prefix: v
 
