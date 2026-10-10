@@ -1,7 +1,30 @@
 # Changelog
 
-`ldap-scim-bridge` uses [PVP][1]-compatible versioning.
-The changelog is available [on GitHub][2].
+Since 0.12.0, `ldap-scim-bridge` follows [Semantic Versioning][1] as the
+Wire build standard defines it: GA `X.Y.Z`, pre-releases
+`X.Y.Z-<alpha|beta|rc>.N`, git tags `vX.Y.Z`. The image, the Helm chart and its
+`appVersion` all carry the same version. Earlier versions used [PVP][3]. The
+per-commit changes are in the [GitHub releases][2].
+
+The cabal file holds the base version of the next release (`0.12.0` for
+`0.12.0-rc.1` too): cabal versions cannot carry a pre-release suffix.
+
+## 0.12.0
+
+The bridge itself is unchanged since 0.10.4; this release changes how it is
+built, versioned and deployed. See
+[docs/release-notes/0.12.0.md](docs/release-notes/0.12.0.md).
+
+- Switch from PVP to Semantic Versioning.
+- Move the Helm chart from wire-server to `charts/ldap-scim-bridge`, published
+  as `oci://quay.io/wire/charts/stable/ldap-scim-bridge` with the bridge
+  version (0.12.0 onwards) instead of the wire-server version (5.x).
+- Chart: `apiVersion: v2`; the image tag defaults to the chart `appVersion`;
+  the bridge configuration is required, or `existingSecret` names a Secret
+  holding it; optional image pull secrets; Kubernetes 1.21 or later.
+- Document the configuration file in `docs/configuration.md`.
+- Build dev versions on every merge and release from GitHub Actions with the
+  Wire release workflows; pushing a tag no longer publishes an image.
 
 ## 0.11.0
 
@@ -62,5 +85,6 @@ as the base of the SemVer versions that follow.
 
 * Initially created.
 
-[1]: https://pvp.haskell.org
+[1]: https://semver.org
 [2]: https://github.com/wireapp/ldap-scim-bridge/releases
+[3]: https://pvp.haskell.org
