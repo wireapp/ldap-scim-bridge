@@ -77,16 +77,16 @@ jobs:
       - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
 
       - name: Build
-        run: nix develop .\#$GHC_VERSION --command bash -c "cabal build all"
+        run: nix develop ".#$GHC_VERSION" --command bash -c "cabal build all"
         env:
           GHC_VERSION: ${{ matrix.ghc }}
 
       - name: Run tests
-        run: nix develop .\#$GHC_VERSION --command bash -c "cabal test all"
+        run: nix develop ".#$GHC_VERSION" --command bash -c "cabal test all"
         env:
           GHC_VERSION: ${{ matrix.ghc }}
 
       - name: Check cabal file
-        run: nix develop .\#$GHC_VERSION --command bash -c "cabal check"
+        run: nix develop ".#$GHC_VERSION" --command bash -c "cabal check"
         env:
           GHC_VERSION: ${{ matrix.ghc }}
