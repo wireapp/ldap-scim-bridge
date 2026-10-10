@@ -109,16 +109,15 @@
         "nixpkgs": "nixpkgs_2"
       },
       "locked": {
-        "lastModified": 1738738687,
-        "narHash": "sha256-iGKP+2je0CohjnkzUuqhOVPtQ/hphG63G3rygDl4z50=",
+        "lastModified": 1739181719,
+        "narHash": "sha256-W4g0e9u5CagGY8qqsHIZbP28iVkvvmz+hCkNz3b5GkE=",
         "owner": "wireapp",
         "repo": "tom-bombadil",
-        "rev": "b85d21b8340db6954bfb4cb7c78e00e4d608afad",
+        "rev": "53842ffb11e8d357b7d7bdf21b800c71a414ed06",
         "type": "github"
       },
       "original": {
         "owner": "wireapp",
-        "ref": "sventennie/import-bombon",
         "repo": "tom-bombadil",
         "type": "github"
       }
