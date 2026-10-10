@@ -16,7 +16,7 @@ spec:
         app: ldap-scim-bridge
         release: {{ .Release.Name }}
       annotations:
-        # An annotation of the configmap checksum ensures changes to the configmap cause a redeployment upon `helm upgrade`
+        # Checksum of the config Secret: a config change shows up in the job template on `helm upgrade`
         checksum/secret: {{ include (print .Template.BasePath "/secret.yaml") . | sha256sum }}
     spec:
       backoffLimit: 0
