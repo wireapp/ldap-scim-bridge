@@ -1,0 +1,646 @@
+name: Prepare release
+
+# Shown as the run title. The ` rm:<request_id>` suffix is how the release
+# manager finds the run it dispatched (together with the actor being its App).
+run-name: Prepare ${{ inputs.type }} from ${{ inputs.source_branch }} (by @${{ github.actor }})${{ inputs.request_id != '' && format(' rm:{0}', inputs.request_id) || '' }}
+
+# First half of a release, modelled on wire-team-settings (ADR 0006 there,
+# ADR-0021 in wire-onprem-first-decisions): builds every release artifact
+# exactly once and opens a DRAFT GitHub Release holding them.
+#
+# - the image, built by Nix and pushed under a candidate tag
+#   <version>-candidate-<run id>, its digest recorded;
+# - the Helm chart, packaged with version == appVersion == <version>;
+# - the SBOM, the release note, the release declaration when given, and the
+#   release manifest recording the identity of each.
+#
+# It never creates the git tag, publishes the final image tag or chart, makes a
+# commit or touches a deployment. publish-release.yml promotes these exact
+# artifacts after approval.
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_branch:
+        description: "Branch to release from: dev, or a release/X.Y line"
+        type: string
+        default: dev
+        required: true
+      type:
+        description: "Release channel"
+        type: choice
+        options: [ga, alpha, beta, rc]
+        default: rc
+        required: true
+      version_bump:
+        description: "Applies when the latest release is a GA (new GA or new pre-release line); ignored when continuing or promoting a pre-release"
+        type: choice
+        options: [patch, minor, major]
+        default: patch
+        required: true
+      force:
+        description: "Bypass the CI status gate on the source commit (logged loudly)"
+        type: boolean
+        default: false
+        required: false
+      # Sent by the release manager; a manual run leaves them empty.
+      request_id:
+        description: "Release-manager request (UUID4). When set, publication is left to the release manager"
+        type: string
+        required: false
+      expected_version:
+        description: "Version the release manager expects. Only a check: the run fails when it differs from the computed version"
+        type: string
+        required: false
+      release_note:
+        description: "Markdown release note authored in the release manager; replaces docs/release-notes/<version>.md for this run only"
+        type: string
+        required: false
+      release_declaration:
+        description: "JSON release declaration (wire.component-release/v1alpha1) authored in the release manager"
+        type: string
+        required: false
+      rm_origin:
+        description: "Release manager that sent the request: staging or prod (required with request_id)"
+        type: string
+        required: false
+
+permissions: {}
+
+# Two overlapping runs would both pass the "no release yet" check and create
+# two drafts for the same tag.
+concurrency:
+  group: prepare-release-${{ inputs.source_branch }}-${{ inputs.type }}
+  cancel-in-progress: false
+
+env:
+  IMAGE_REPOSITORY: quay.io/wire/ldap-scim-bridge
+  CHART_PATH: charts/ldap-scim-bridge
+  CHART_REPOSITORY: oci://quay.io/wire/charts/stable/ldap-scim-bridge
+  HELM_VERSION: v3.22.0
+
+jobs:
+  prepare:
+    name: Prepare release candidate
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: write # the draft release
+      checks: read # CI gate: check runs of the source commit
+      statuses: read # CI gate: commit statuses
+      actions: read # CI gate: this workflow's own runs, left out
+
+    outputs:
+      version: ${{ steps.version.outputs.target }}
+      release_id: ${{ steps.release.outputs.id }}
+
+    steps:
+      # The release scripts come from the commit this workflow runs from, not
+      # from source_branch, which is not validated yet.
+      - name: Checkout the release tooling
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          path: .release-tooling
+          sparse-checkout: bin
+          persist-credentials: false
+
+      # Every input is checked against the release manager contract before it
+      # is used. Values arrive through `env`, never through `${{ }}` in a
+      # script: a note or a declaration is free text.
+      - name: Validate inputs
+        env:
+          SOURCE_BRANCH: ${{ inputs.source_branch }}
+          TYPE: ${{ inputs.type }}
+          VERSION_BUMP: ${{ inputs.version_bump }}
+          FORCE: ${{ inputs.force }}
+          REQUEST_ID: ${{ inputs.request_id }}
+          EXPECTED_VERSION: ${{ inputs.expected_version }}
+          RELEASE_NOTE: ${{ inputs.release_note }}
+          RELEASE_DECLARATION: ${{ inputs.release_declaration }}
+          RM_ORIGIN: ${{ inputs.rm_origin }}
+        run: |
+          set -euo pipefail
+          mkdir -p "${RUNNER_TEMP}/release-tooling" "${RUNNER_TEMP}/release"
+          cp -R .release-tooling/bin "${RUNNER_TEMP}/release-tooling/bin"
+          "${RUNNER_TEMP}/release-tooling/bin/validate-release-inputs.sh"
+
+      - name: Check the source branch exists
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_BRANCH: ${{ inputs.source_branch }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          if ! gh api "repos/${REPO}/branches/${SOURCE_BRANCH}" --jq .name >/dev/null 2>&1; then
+            echo "::error::branch '${SOURCE_BRANCH}' does not exist on ${REPO}; existing release lines:"
+            gh api --paginate "repos/${REPO}/branches" --jq '.[].name | select(startswith("release/"))' | sed 's/^/  - /'
+            exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.source_branch }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      # Recorded now: a later push to source_branch must not change the
+      # prepared candidate.
+      - name: Resolve the source commit
+        id: source
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Compute the target version
+        id: version
+        env:
+          SOURCE_BRANCH: ${{ inputs.source_branch }}
+          RELEASE_TYPE: ${{ inputs.type }}
+          VERSION_BUMP: ${{ inputs.version_bump }}
+          SOURCE_SHA: ${{ steps.source.outputs.sha }}
+          REQUEST_ID: ${{ inputs.request_id }}
+          RM_ORIGIN: ${{ inputs.rm_origin }}
+        run: |
+          set -euo pipefail
+          target=$("${RUNNER_TEMP}/release-tooling/bin/compute-release-version.sh" "$SOURCE_BRANCH" "$RELEASE_TYPE" "$VERSION_BUMP")
+          latest_tag=$(git describe --tags --match "v[0-9]*.[0-9]*.[0-9]*" --abbrev=0 "origin/${SOURCE_BRANCH}")
+
+          # Changelog base: the preceding GA for a GA or the first candidate of
+          # a channel (.1), the preceding tag for the later candidates.
+          if [[ "$RELEASE_TYPE" == "ga" || "$target" =~ -(alpha|beta|rc)\.1$ ]]; then
+            from_tag=$(git describe --tags --exclude '*-*' --match "v[0-9]*.[0-9]*.[0-9]*" --abbrev=0 "origin/${SOURCE_BRANCH}" 2>/dev/null ||
+              echo "$latest_tag")
+          else
+            from_tag="$latest_tag"
+          fi
+          {
+            echo "target=$target"
+            echo "from_tag=$from_tag"
+          } >> "$GITHUB_OUTPUT"
+
+          {
+            echo "## Preparing \`v${target}\`"
+            echo
+            echo "| | |"
+            echo "| --- | --- |"
+            echo "| Version | \`${target}\` |"
+            echo "| Channel | \`${RELEASE_TYPE}\` |"
+            echo "| Source | \`${SOURCE_BRANCH}\` at \`${SOURCE_SHA}\` |"
+            echo "| Changes since | \`${from_tag}\` |"
+            if [[ -n "$REQUEST_ID" ]]; then
+              echo "| Release manager request | \`${REQUEST_ID}\` (${RM_ORIGIN}) |"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [[ "$RELEASE_TYPE" == "ga" && "$VERSION_BUMP" != "patch" && "$latest_tag" =~ -(alpha|beta|rc)\.[0-9]+$ ]]; then
+            echo "::warning::version_bump '${VERSION_BUMP}' was ignored: ${latest_tag} is a pre-release, so this GA promotes it to ${target}."
+          fi
+
+      # A check, never a source: the release manager computes the version on
+      # its side, and a drift between the two stops the run before any build.
+      - name: Check the version expected by the release manager
+        if: inputs.expected_version != ''
+        env:
+          EXPECTED_VERSION: ${{ inputs.expected_version }}
+          TARGET: ${{ steps.version.outputs.target }}
+        run: |
+          if [[ "$EXPECTED_VERSION" != "$TARGET" ]]; then
+            echo "::error::the release manager expected '${EXPECTED_VERSION}' but this workflow computed '${TARGET}'; nothing was built"
+            exit 1
+          fi
+
+      # The cabal version is numeric only: it carries the base version of the
+      # release being prepared (0.12.0 for 0.12.0-rc.1 and for 0.12.0).
+      - name: Check the cabal version
+        env:
+          TARGET: ${{ steps.version.outputs.target }}
+        run: |
+          set -euo pipefail
+          base="${TARGET%%-*}"
+          cabal_version=$(awk '$1 == "version:" {print $2; exit}' ldap-scim-bridge.cabal)
+          if [[ "$cabal_version" != "$base" ]]; then
+            echo "::error::ldap-scim-bridge.cabal says version ${cabal_version}, expected ${base} for ${TARGET}: bump it (and CHANGELOG.md) on the source branch first"
+            exit 1
+          fi
+
+      # The note is docs/release-notes/<X.Y.Z>.md (or <X.Y>.md) on the source
+      # branch, or the release_note input, which wins and is never committed.
+      # A GA without a note fails: the release body is written once. Both
+      # documents are written from `env` with printf.
+      - name: Resolve the release documents
+        id: documents
+        env:
+          RELEASE_TYPE: ${{ inputs.type }}
+          TARGET: ${{ steps.version.outputs.target }}
+          RELEASE_NOTE: ${{ inputs.release_note }}
+          RELEASE_DECLARATION: ${{ inputs.release_declaration }}
+        run: |
+          set -euo pipefail
+          base="${TARGET%%-*}"
+          out="${RUNNER_TEMP}/release"
+          note_doc=""
+          note_source=""
+          if [[ -n "$RELEASE_NOTE" ]]; then
+            note_doc="docs/release-notes/${base}.md"
+            mkdir -p docs/release-notes
+            printf '%s' "$RELEASE_NOTE" > "$note_doc"
+            note_source=release_manager
+          else
+            for candidate in "docs/release-notes/${base}.md" "docs/release-notes/${base%.*}.md"; do
+              if [[ -f "$candidate" ]]; then
+                note_doc="$candidate"
+                note_source=repository
+                break
+              fi
+            done
+          fi
+          if [[ "$RELEASE_TYPE" == "ga" && -z "$note_doc" ]]; then
+            echo "::error::no release note for GA ${TARGET}: add docs/release-notes/${base}.md to the source branch, or send release_note"
+            exit 1
+          fi
+          note_sha256=""
+          if [[ -n "$note_doc" ]]; then
+            cp "$note_doc" "${out}/release-note.md"
+            note_sha256=$(sha256sum "${out}/release-note.md" | awk '{print $1}')
+          else
+            echo "::warning::no release note for ${base} yet; the ${RELEASE_TYPE} body says so"
+          fi
+          declaration_sha256=""
+          if [[ -n "$RELEASE_DECLARATION" ]]; then
+            printf '%s' "$RELEASE_DECLARATION" > "${out}/release-declaration.json"
+            declaration_sha256=$(sha256sum "${out}/release-declaration.json" | awk '{print $1}')
+          fi
+          {
+            echo "note_doc=$note_doc"
+            echo "note_source=$note_source"
+            echo "note_sha256=$note_sha256"
+            echo "declaration_sha256=$declaration_sha256"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Validate the release declaration
+        if: inputs.release_declaration != ''
+        uses: wireapp/wire-rm-actions/release-declaration@bb09ea0019420aea60d39a8905a83724de05645f # main  # TODO(WPB-29309): pin vX.Y.Z
+        with:
+          file: ${{ runner.temp }}/release/release-declaration.json
+          component: ldap-scim-bridge
+          version: ${{ steps.version.outputs.target }}
+
+      - name: Check no release exists yet
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          TARGET: ${{ steps.version.outputs.target }}
+        run: |
+          set -euo pipefail
+          existing=$(gh api --paginate "repos/${REPO}/releases" --jq ".[] | select(.tag_name == \"v${TARGET}\") | .id")
+          if [[ -n "$existing" ]]; then
+            echo "::error::a draft or published release already exists for v${TARGET} (id(s): ${existing})"
+            exit 1
+          fi
+
+      # The source commit must have passed CI. Each check counts by its latest
+      # run; this workflow's own runs and GitHub-managed dynamic workflows
+      # (Dependabot) are left out; no check at all is a failure, not a pass.
+      # force is the only bypass, and it is logged.
+      - name: Check CI passed on the source commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FORCE: ${{ inputs.force }}
+          SHA: ${{ steps.source.outputs.sha }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          if [[ "$FORCE" == "true" ]]; then
+            echo "::warning::CI gate bypassed (force) for ${SHA}"
+            echo "### :warning: CI gate bypassed: checks on \`${SHA}\` were not verified" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          wf="${GITHUB_WORKFLOW_REF%%@*}"
+          wf="${wf##*/}"
+          own_runs=$(gh api --paginate "repos/${REPO}/actions/workflows/${wf}/runs?head_sha=${SHA}" --jq '.workflow_runs[].id' |
+            jq -R . | jq -sc --arg cur "$GITHUB_RUN_ID" '. + [$cur] | unique')
+          all_runs=$(gh api --paginate "repos/${REPO}/commits/${SHA}/check-runs" --jq '.check_runs[]' | jq -sc '.')
+
+          dynamic_runs='[]'
+          run_ids=$(jq -r '[.[] | (.details_url // "") | capture("/actions/runs/(?<id>[0-9]+)/") | .id] | unique | .[]' <<<"$all_runs" || true)
+          while IFS= read -r rid; do
+            [[ -z "$rid" ]] && continue
+            path=$(gh api "repos/${REPO}/actions/runs/${rid}" --jq .path 2>/dev/null || echo "")
+            if [[ "$path" == dynamic/* ]]; then
+              dynamic_runs=$(jq -c --arg id "$rid" '. + [$id]' <<<"$dynamic_runs")
+            fi
+          done <<<"$run_ids"
+          excluded=$(jq -sc 'add | unique' <<<"$own_runs$dynamic_runs")
+
+          check_runs=$(jq -c --argjson excl "$excluded" '
+              [ .[] | select(
+                  (.details_url // "") as $u
+                  | ($excl | any(. as $id | $u | contains("/actions/runs/\($id)/"))) | not
+                ) ]
+              | [ group_by(.name)[] | max_by([(.started_at // ""), .id]) ]' <<<"$all_runs")
+          bad=$(jq '[.[] | select(.status == "completed" and (.conclusion == "failure" or .conclusion == "timed_out" or .conclusion == "cancelled" or .conclusion == "action_required"))]' <<<"$check_runs")
+          pending=$(jq '[.[] | select(.status != "completed")]' <<<"$check_runs")
+
+          if [[ "$(jq length <<<"$bad")" -gt 0 ]]; then
+            echo "::error::checks failed on ${SHA}:"
+            jq -r '.[] | "  - \(.name): \(.conclusion)"' <<<"$bad"
+            exit 1
+          fi
+          if [[ "$(jq length <<<"$pending")" -gt 0 ]]; then
+            echo "::error::checks still running on ${SHA}:"
+            jq -r '.[] | "  - \(.name): \(.status)"' <<<"$pending"
+            exit 1
+          fi
+          if [[ "$(jq length <<<"$check_runs")" -eq 0 ]]; then
+            echo "::error::no check ran on ${SHA}; use force to release it anyway"
+            exit 1
+          fi
+          # Legacy commit statuses, when an external reporter sets any.
+          combined=$(gh api "repos/${REPO}/commits/${SHA}/status")
+          if [[ "$(jq -r .total_count <<<"$combined")" -gt 0 ]] &&
+            [[ "$(jq -r .state <<<"$combined")" =~ ^(failure|error|pending)$ ]]; then
+            echo "::error::combined commit status of ${SHA} is $(jq -r .state <<<"$combined"):"
+            jq -r '.statuses[] | "  - \(.context): \(.state)"' <<<"$combined"
+            exit 1
+          fi
+          echo "CI gate passed for ${SHA} ($(jq length <<<"$check_runs") check(s))"
+
+      - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
+
+      - name: Build the image
+        run: nix build .#dockerImage --out-link "${RUNNER_TEMP}/image.tar.gz"
+
+      - name: Install skopeo
+        run: |
+          nix build --inputs-from . nixpkgs#skopeo --out-link "${RUNNER_TEMP}/skopeo"
+          echo "${RUNNER_TEMP}/skopeo/bin" >> "$GITHUB_PATH"
+
+      # Never with an expiry label: the label is part of the digest that
+      # publication promotes.
+      - name: Push the candidate image
+        id: image
+        env:
+          TARGET: ${{ steps.version.outputs.target }}
+          REGISTRY_USERNAME: ${{ vars.QUAY_USERNAME }}
+          REGISTRY_PASSWORD: ${{ secrets.QUAY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          candidate_tag="${TARGET}-candidate-${GITHUB_RUN_ID}"
+          bin/push-image.sh "${RUNNER_TEMP}/image.tar.gz" "$IMAGE_REPOSITORY" "$candidate_tag"
+          echo "candidate_tag=${candidate_tag}" >> "$GITHUB_OUTPUT"
+
+      # Dependencies of the release, uploaded to Dependency-Track by
+      # publish-release.yml under the final version. tom-bombadil is the
+      # revision locked in flake.lock.
+      - name: Build the SBOM
+        id: sbom
+        run: |
+          set -euo pipefail
+          nix build .#bomDependencies
+          nix run --inputs-from . tom-bombadil#create-sbom -- --root-package-name ldap-scim-bridge
+          mv sbom.json "${RUNNER_TEMP}/release/sbom.json"
+          echo "sha256=$(sha256sum "${RUNNER_TEMP}/release/sbom.json" | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+
+      - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+        with:
+          version: ${{ env.HELM_VERSION }}
+
+      # Packaged once, here, with version == appVersion == the release version.
+      - name: Package the chart
+        id: chart
+        env:
+          TARGET: ${{ steps.version.outputs.target }}
+        run: |
+          set -euo pipefail
+          helm lint --strict "$CHART_PATH" -f ci/helm/values-test.yaml
+          helm package "$CHART_PATH" --version "$TARGET" --app-version "$TARGET" -d "${RUNNER_TEMP}/release"
+          file="ldap-scim-bridge-${TARGET}.tgz"
+          {
+            echo "file=${file}"
+            echo "sha256=$(sha256sum "${RUNNER_TEMP}/release/${file}" | awk '{print $1}')"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Changelog
+        id: changelog
+        uses: wireapp/wire-rm-actions/changelog@bb09ea0019420aea60d39a8905a83724de05645f # main  # TODO(WPB-29309): pin vX.Y.Z
+        with:
+          from-tag: ${{ steps.version.outputs.from_tag }}
+          to-ref: ${{ steps.source.outputs.sha }}
+          heading: "false"
+          output-file: ${{ runner.temp }}/changelog.md
+
+      - name: Write the release manifest
+        env:
+          TARGET: ${{ steps.version.outputs.target }}
+          RELEASE_TYPE: ${{ inputs.type }}
+          SOURCE_BRANCH: ${{ inputs.source_branch }}
+          SOURCE_COMMIT: ${{ steps.source.outputs.sha }}
+          CANDIDATE_TAG: ${{ steps.image.outputs.candidate_tag }}
+          IMAGE_DIGEST: ${{ steps.image.outputs.digest }}
+          CHART_FILE: ${{ steps.chart.outputs.file }}
+          CHART_SHA256: ${{ steps.chart.outputs.sha256 }}
+          SBOM_SHA256: ${{ steps.sbom.outputs.sha256 }}
+          REQUEST_ID: ${{ inputs.request_id }}
+          RM_ORIGIN: ${{ inputs.rm_origin }}
+          NOTE_SHA256: ${{ steps.documents.outputs.note_sha256 }}
+          NOTE_SOURCE: ${{ steps.documents.outputs.note_source }}
+          DECLARATION_SHA256: ${{ steps.documents.outputs.declaration_sha256 }}
+        run: |
+          set -euo pipefail
+          manifest="${RUNNER_TEMP}/release/release-manifest.json"
+          jq -n \
+            --arg version "$TARGET" \
+            --arg type "$RELEASE_TYPE" \
+            --arg source_branch "$SOURCE_BRANCH" \
+            --arg source_commit "$SOURCE_COMMIT" \
+            --arg image_repository "$IMAGE_REPOSITORY" \
+            --arg candidate_tag "$CANDIDATE_TAG" \
+            --arg image_digest "$IMAGE_DIGEST" \
+            --arg chart_repository "$CHART_REPOSITORY" \
+            --arg chart_file "$CHART_FILE" \
+            --arg chart_sha256 "$CHART_SHA256" \
+            --arg sbom_sha256 "$SBOM_SHA256" \
+            --arg prepare_run_id "$GITHUB_RUN_ID" \
+            --arg request_id "$REQUEST_ID" \
+            --arg rm_origin "$RM_ORIGIN" \
+            --arg note_sha256 "$NOTE_SHA256" \
+            --arg note_source "$NOTE_SOURCE" \
+            --arg decl_sha256 "$DECLARATION_SHA256" \
+            '{
+              version: $version,
+              type: $type,
+              source_branch: $source_branch,
+              source_commit: $source_commit,
+              docker: {
+                repository: $image_repository,
+                candidate_tag: $candidate_tag,
+                release_tag: $version,
+                digest: $image_digest
+              },
+              helm: { repository: $chart_repository, file: $chart_file, version: $version, sha256: $chart_sha256 },
+              sbom: { file: "sbom.json", sha256: $sbom_sha256 },
+              prepare_run_id: $prepare_run_id,
+              request_id: (if $request_id == "" then null else $request_id end),
+              rm_origin: (if $rm_origin == "" then null else $rm_origin end),
+              documents: (
+                (if $note_sha256 == "" then {} else
+                  { release_note: { file: "release-note.md", sha256: $note_sha256, source: $note_source } } end)
+                + (if $decl_sha256 == "" then {} else
+                  { release_declaration: { file: "release-declaration.json", sha256: $decl_sha256, source: "release_manager" } } end)
+              )
+            }' > "$manifest"
+          for path in .version .type .source_branch .source_commit .docker.digest .docker.candidate_tag .helm.file .helm.sha256 .sbom.sha256; do
+            value=$(jq -r "$path" "$manifest")
+            if [[ -z "$value" || "$value" == null ]]; then
+              echo "::error::release manifest field ${path} is empty"
+              exit 1
+            fi
+          done
+          cat "$manifest"
+
+      # The body is written once and read after publication, by operators of
+      # on-prem installations: a GA carries its note, a pre-release a warning.
+      - name: Create the draft release
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SERVER_URL: ${{ github.server_url }}
+          RELEASE_TYPE: ${{ inputs.type }}
+          TARGET: ${{ steps.version.outputs.target }}
+          SOURCE_COMMIT: ${{ steps.source.outputs.sha }}
+          FROM_TAG: ${{ steps.version.outputs.from_tag }}
+          NOTE_DOC: ${{ steps.documents.outputs.note_doc }}
+          NOTE_SOURCE: ${{ steps.documents.outputs.note_source }}
+          CHANGELOG_FILE: ${{ steps.changelog.outputs.file }}
+          CHANGELOG_COUNT: ${{ steps.changelog.outputs.count }}
+          CANDIDATE_TAG: ${{ steps.image.outputs.candidate_tag }}
+          IMAGE_DIGEST: ${{ steps.image.outputs.digest }}
+          CHART_FILE: ${{ steps.chart.outputs.file }}
+          CHART_SHA256: ${{ steps.chart.outputs.sha256 }}
+          REQUEST_ID: ${{ inputs.request_id }}
+          RM_ORIGIN: ${{ inputs.rm_origin }}
+        run: |
+          set -euo pipefail
+          tag="v${TARGET}"
+          base="${TARGET%%-*}"
+          out="${RUNNER_TEMP}/release"
+
+          existing=$(gh api --paginate "repos/${REPO}/releases" --jq ".[] | select(.tag_name == \"${tag}\") | .id")
+          if [[ -n "$existing" ]]; then
+            echo "::error::a release appeared for ${tag} meanwhile (id(s): ${existing})"
+            exit 1
+          fi
+
+          body="${RUNNER_TEMP}/body.md"
+          {
+            if [[ "$RELEASE_TYPE" == "ga" ]]; then
+              cat "$NOTE_DOC"
+            else
+              echo "> [!IMPORTANT]"
+              echo "> **Pre-release (\`${RELEASE_TYPE}\`) of \`${base}\`.** Deploy it to non-production environments only; it will be superseded."
+              echo ">"
+              if [[ "$NOTE_SOURCE" == "release_manager" ]]; then
+                echo "> The release note, authored in the release manager, is attached."
+              elif [[ -n "$NOTE_DOC" ]]; then
+                echo "> Release note of ${base}: [\`${NOTE_DOC}\`](${SERVER_URL}/${REPO}/blob/${SOURCE_COMMIT}/${NOTE_DOC})"
+              else
+                echo "> The release note of ${base} comes with the GA."
+              fi
+            fi
+            echo
+            echo "---"
+            echo
+            # The shared changelog lists conventional commits (type: subject)
+            # only; fall back to every commit subject when none is.
+            if [[ "$CHANGELOG_COUNT" != "0" ]]; then
+              cat "$CHANGELOG_FILE"
+            elif [[ -n "$(git log --format=%s "${FROM_TAG}..${SOURCE_COMMIT}")" ]]; then
+              echo "### Commits since \`${FROM_TAG}\`"
+              echo
+              git log --format="* %s ([%h](${SERVER_URL}/${REPO}/commit/%H))" "${FROM_TAG}..${SOURCE_COMMIT}"
+            else
+              echo "_No changes since \`${FROM_TAG}\`._"
+            fi
+            echo
+            echo "---"
+            echo
+            echo "### Artifacts"
+            echo
+            echo "| | |"
+            echo "| --- | --- |"
+            echo "| Image | \`${IMAGE_REPOSITORY}:${TARGET}\` |"
+            echo "| Helm chart | \`${CHART_REPOSITORY}\` version \`${TARGET}\` |"
+            echo
+            echo "<details>"
+            echo "<summary>Checksums and provenance</summary>"
+            echo
+            echo "| | |"
+            echo "| --- | --- |"
+            echo "| Source commit | \`${SOURCE_COMMIT}\` |"
+            echo "| Image digest | \`${IMAGE_DIGEST}\` |"
+            echo "| Chart SHA256 | \`${CHART_SHA256}\` |"
+            echo
+            echo "Fixed before approval and never rebuilt; \`release-manifest.json\` is the authoritative record."
+            echo
+            echo "</details>"
+          } > "$body"
+
+          args=(--target "$SOURCE_COMMIT" --title "$tag" --draft --notes-file "$body")
+          if [[ "$RELEASE_TYPE" != "ga" ]]; then
+            args+=(--prerelease)
+          fi
+          assets=("${out}/${CHART_FILE}" "${out}/release-manifest.json" "${out}/sbom.json")
+          for doc in "${out}/release-note.md" "${out}/release-declaration.json"; do
+            if [[ -f "$doc" ]]; then
+              assets+=("$doc")
+            fi
+          done
+          gh release create "$tag" "${assets[@]}" "${args[@]}" > /dev/null
+
+          # Drafts do not resolve through /releases/tags/<tag>, and the list is
+          # eventually consistent: retry, and refuse more than one match.
+          release_id=""
+          draft_url=""
+          for attempt in 1 2 3 4 5; do
+            matches=$(gh api --paginate "repos/${REPO}/releases" --jq ".[] | select(.tag_name == \"${tag}\") | {id, html_url}" | jq -s .)
+            count=$(jq length <<<"$matches")
+            if [[ "$count" -eq 1 ]]; then
+              release_id=$(jq -r '.[0].id' <<<"$matches")
+              draft_url=$(jq -r '.[0].html_url // empty' <<<"$matches")
+              break
+            elif [[ "$count" -gt 1 ]]; then
+              echo "::error::${count} releases for ${tag}; refusing to guess which draft to publish"
+              exit 1
+            fi
+            echo "the releases list does not show ${tag} yet (attempt ${attempt}/5)"
+            sleep 3
+          done
+          if [[ -z "$release_id" ]]; then
+            echo "::error::${tag} was created but never appeared in the releases list; delete the draft before preparing this version again"
+            exit 1
+          fi
+          echo "id=${release_id}" >> "$GITHUB_OUTPUT"
+
+          {
+            echo
+            echo "### Draft release ready: [${tag}](${draft_url:-${SERVER_URL}/${REPO}/releases})"
+            echo
+            echo "| Artifact | Identity |"
+            echo "| --- | --- |"
+            echo "| Candidate image | \`${IMAGE_REPOSITORY}:${CANDIDATE_TAG}\` @ \`${IMAGE_DIGEST}\` |"
+            echo "| Helm chart | \`${CHART_FILE}\` sha256 \`${CHART_SHA256}\` |"
+            echo
+            echo "#### Before approving"
+            echo
+            echo "Install the attached chart with the candidate image in a validation cluster:"
+            echo
+            echo "\`helm upgrade --install ldap-scim-bridge ./${CHART_FILE} --set image.tag=${CANDIDATE_TAG} -f <values>\`"
+            echo
+            if [[ -n "$REQUEST_ID" ]]; then
+              echo "Prepared for release-manager request \`${REQUEST_ID}\` (${RM_ORIGIN}): once approved there, the release manager dispatches publish-release, which promotes these exact artifacts."
+            else
+              echo "Then approve the \`release-publication\` environment of this run: publication promotes these exact artifacts, it never rebuilds them."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
