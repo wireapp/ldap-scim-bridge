@@ -32,7 +32,7 @@ spec:
           volumes:
             - name: "ldap-scim-bridge-config"
               secret:
-                secretName: {{ .Release.Name }}
+                secretName: {{ .Values.existingSecret | default .Release.Name }}
           containers:
             - name: ldap-scim-bridge
               image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"

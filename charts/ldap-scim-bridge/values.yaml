@@ -16,6 +16,10 @@ resources:
 # https://v1-19.docs.kubernetes.io/docs/tasks/job/automated-tasks-with-cron-jobs/#schedule
 # based on observation - 20211004 - JEL
 schedule: "*/5 * * * *"
+# Name of an existing Secret holding the whole bridge configuration under the
+# key `config.yaml`. When set, `config` is ignored and the chart renders no
+# Secret of its own.
+existingSecret: ""
 # https://github.com/wireapp/ldap-scim-bridge
 #config:
 #  logLevel: "Debug"  # one of Trace,Debug,Info,Warn,Error,Fatal; `Fatal` is least noisy, `Trace` most.
