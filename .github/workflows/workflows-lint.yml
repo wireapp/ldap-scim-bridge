@@ -1,9 +1,10 @@
 name: Workflows lint
 
-# Static checks of the workflows, on every PR that touches them: actionlint
-# (syntax, expressions, action inputs, and shellcheck over every `run:` block)
-# and zizmor (security audit: template injection, credential persistence,
-# permissions, unpinned actions).
+# Static checks of the workflows and of the bin/ scripts they call, on every PR
+# that touches them: actionlint (syntax, expressions, action inputs, and
+# shellcheck over every `run:` block), zizmor (security audit: template
+# injection, credential persistence, permissions, unpinned actions), and the
+# bin/ script tests.
 #
 # Both tools are pinned by content, not by tag: actionlint by the sha256 of
 # its release archive, zizmor by the wheel hashes in
@@ -82,3 +83,22 @@ jobs:
           zizmor --offline --format github --min-severity medium --min-confidence medium .github/workflows
           echo "--- every finding, for information (does not fail the job):"
           zizmor --offline --format plain --no-exit-codes .github/workflows
+
+  scripts-tests:
+    name: bin script tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: shellcheck
+        run: shellcheck -x bin/*.sh bin/test/*.sh
+
+      - name: Script tests
+        run: bin/test/run.sh
