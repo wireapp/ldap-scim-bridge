@@ -1,0 +1,178 @@
+name: Build
+
+# Dev builds (ADR-0018): every push to `dev` and `release/**`, and on demand on
+# any branch, publishes the image and the Helm chart under the version computed
+# by the shared `version` action, then declares it to the release managers.
+#
+# Pre-releases and GA versions are built once by prepare-release.yml and
+# promoted by publish-release.yml. On a `v*` tag this workflow only checks that
+# the released image and chart exist: it never rebuilds or publishes them.
+on:
+  push:
+    branches:
+      - dev
+      - "release/**"
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions: {}
+
+# Never cancel a run that may be publishing.
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  IMAGE_REPOSITORY: quay.io/wire/ldap-scim-bridge
+  CHART_PATH: charts/ldap-scim-bridge
+  HELM_VERSION: v3.22.0
+
+jobs:
+  dev-build:
+    name: Dev build
+    if: github.ref_type != 'tag'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+
+    steps:
+      # The version derives from the nearest tag: history and tags are needed.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Compute the version
+        id: version
+        uses: wireapp/wire-rm-actions/version@bb09ea0019420aea60d39a8905a83724de05645f # main  # TODO(WPB-29309): pin vX.Y.Z
+        with:
+          release-branches: ^(dev|release/.+)$
+          tag-prefix: v
+
+      - name: Check this is a dev build
+        env:
+          KIND: ${{ steps.version.outputs.kind }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          if [[ "$KIND" != dev ]]; then
+            echo "::error::expected a dev build, got '${KIND}' (${VERSION})"
+            exit 1
+          fi
+          echo "### Dev build \`${VERSION}\`" >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
+
+      # The image tag inside the archive stays `build` (flake.nix): the
+      # published tag is the computed version, set at push time.
+      - name: Build the image
+        run: nix build .#dockerImage --out-link "${RUNNER_TEMP}/image.tar.gz"
+
+      # skopeo from the nixpkgs locked by flake.lock.
+      - name: Install skopeo
+        run: |
+          nix build --inputs-from . nixpkgs#skopeo --out-link "${RUNNER_TEMP}/skopeo"
+          echo "${RUNNER_TEMP}/skopeo/bin" >> "$GITHUB_PATH"
+
+      - name: Push the image
+        id: image
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          REGISTRY_USERNAME: ${{ vars.QUAY_USERNAME }}
+          REGISTRY_PASSWORD: ${{ secrets.QUAY_PASSWORD }}
+        run: bin/push-image.sh "${RUNNER_TEMP}/image.tar.gz" "${IMAGE_REPOSITORY}" "${VERSION}"
+
+      - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+        with:
+          version: ${{ env.HELM_VERSION }}
+
+      # publish-chart needs oras for expires-after.
+      - uses: oras-project/setup-oras@005458ad77f1c8facd38a094e4af2e69e5607ff4 # v2.0.2
+
+      - name: Publish the chart
+        id: chart
+        uses: wireapp/wire-rm-actions/publish-chart@bb09ea0019420aea60d39a8905a83724de05645f # main  # TODO(WPB-29309): pin vX.Y.Z
+        with:
+          chart-path: ${{ env.CHART_PATH }}
+          version: ${{ steps.version.outputs.version }}
+          channel: dev
+          expires-after: 90d
+          username: ${{ vars.QUAY_USERNAME }}
+          password: ${{ secrets.QUAY_PASSWORD }}
+
+      # Last step. An unset URL skips that release manager with a warning; a
+      # failed declaration warns and keeps the build green.
+      - name: Declare the version to the release managers
+        uses: wireapp/wire-rm-actions/notify-rm@bb09ea0019420aea60d39a8905a83724de05645f # main  # TODO(WPB-29309): pin vX.Y.Z
+        with:
+          rm-staging-url: ${{ vars.RM_STAGING_URL }}
+          rm-staging-token: ${{ secrets.RM_STAGING_TOKEN }}
+          rm-prod-url: ${{ vars.RM_PROD_URL }}
+          rm-prod-token: ${{ secrets.RM_PROD_TOKEN }}
+          component: ldap-scim-bridge
+          version: ${{ steps.version.outputs.version }}
+          kind: ${{ steps.version.outputs.kind }}
+          repository: ${{ steps.chart.outputs.repository }}
+          digest: ${{ steps.chart.outputs.digest }}
+          meta: |
+            image=${{ env.IMAGE_REPOSITORY }}@${{ steps.image.outputs.digest }}
+
+  verify-release-tag:
+    name: Verify released artifacts
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      # Fails on a tag that is not a GA or pre-release version.
+      - name: Read the version from the tag
+        id: version
+        uses: wireapp/wire-rm-actions/version@bb09ea0019420aea60d39a8905a83724de05645f # main  # TODO(WPB-29309): pin vX.Y.Z
+        with:
+          tag-prefix: v
+
+      - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
+
+      - name: Install skopeo
+        run: |
+          nix build --inputs-from . nixpkgs#skopeo --out-link "${RUNNER_TEMP}/skopeo"
+          echo "${RUNNER_TEMP}/skopeo/bin" >> "$GITHUB_PATH"
+
+      - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+        with:
+          version: ${{ env.HELM_VERSION }}
+
+      - name: Check the image and the chart exist
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          QUAY_USERNAME: ${{ vars.QUAY_USERNAME }}
+          QUAY_PASSWORD: ${{ secrets.QUAY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$QUAY_PASSWORD" | skopeo login --username "$QUAY_USERNAME" --password-stdin quay.io
+          printf '%s' "$QUAY_PASSWORD" | helm registry login quay.io --username "$QUAY_USERNAME" --password-stdin
+          missing=0
+          if ! skopeo inspect --format '{{.Digest}}' "docker://${IMAGE_REPOSITORY}:${VERSION}"; then
+            echo "::error::image ${IMAGE_REPOSITORY}:${VERSION} not found"
+            missing=1
+          fi
+          if ! chart=$(helm show chart "oci://quay.io/wire/charts/stable/ldap-scim-bridge" --version "$VERSION"); then
+            echo "::error::chart oci://quay.io/wire/charts/stable/ldap-scim-bridge:${VERSION} not found"
+            missing=1
+          elif ! grep -qxE "appVersion: \"?${VERSION//./\\.}\"?" <<<"$chart"; then
+            echo "::error::chart ${VERSION} has another appVersion"
+            missing=1
+          fi
+          if [[ $missing != 0 ]]; then
+            echo "::error::tag v${VERSION} has no released artifacts: releases go through prepare-release.yml and publish-release.yml, not a hand-pushed tag"
+            exit 1
+          fi
+          echo "### v${VERSION}: image and chart released" >> "$GITHUB_STEP_SUMMARY"
