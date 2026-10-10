@@ -372,9 +372,7 @@ jobs:
         run: nix build .#dockerImage --out-link "${RUNNER_TEMP}/image.tar.gz"
 
       - name: Install skopeo
-        run: |
-          nix build --inputs-from . nixpkgs#skopeo --out-link "${RUNNER_TEMP}/skopeo"
-          echo "${RUNNER_TEMP}/skopeo/bin" >> "$GITHUB_PATH"
+        run: bin/install-nix-tool.sh skopeo
 
       # Never with an expiry label: the label is part of the digest that
       # publication promotes.

@@ -71,9 +71,7 @@ jobs:
 
       # skopeo from the nixpkgs locked by flake.lock.
       - name: Install skopeo
-        run: |
-          nix build --inputs-from . nixpkgs#skopeo --out-link "${RUNNER_TEMP}/skopeo"
-          echo "${RUNNER_TEMP}/skopeo/bin" >> "$GITHUB_PATH"
+        run: bin/install-nix-tool.sh skopeo
 
       - name: Push the image
         id: image
@@ -142,9 +140,7 @@ jobs:
       - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
 
       - name: Install skopeo
-        run: |
-          nix build --inputs-from . nixpkgs#skopeo --out-link "${RUNNER_TEMP}/skopeo"
-          echo "${RUNNER_TEMP}/skopeo/bin" >> "$GITHUB_PATH"
+        run: bin/install-nix-tool.sh skopeo
 
       - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
         with:
