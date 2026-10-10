@@ -1,0 +1,500 @@
+name: Publish release
+
+# Shown as the run title on a manual or release-manager dispatch. The
+# ` rm:<request_id>` suffix is how the release manager finds the run it
+# dispatched.
+run-name: Publish v${{ inputs.version }} (by @${{ github.actor }})${{ inputs.request_id != '' && format(' rm:{0}', inputs.request_id) || '' }}
+
+# Second half of a release, modelled on wire-team-settings: no build at all.
+# It verifies the draft prepared by prepare-release.yml against its manifest,
+# promotes the exact image (by digest) and chart package to their release
+# names, publishes the draft LAST (which creates the vX.Y.Z tag), then uploads
+# the SBOM to Dependency-Track and declares the version to the release
+# managers. Every destination is idempotent: already published and identical
+# is a no-op, already published and different fails. It never deploys and
+# never touches wire-builds.
+#
+# Called by prepare-release.yml after approval of the `release-publication`
+# environment (required reviewers), or dispatched: by the release manager after
+# its own approval (`request_id`, checked by verify-approval, environment
+# `release-publication-rm` without reviewers), or by hand to resume a partial
+# publication. Both environments must exist before this workflow runs: GitHub
+# creates a missing one on the fly, without protection.
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: "Version to publish, as computed by prepare-release"
+        type: string
+        required: true
+      release_id:
+        description: "Numeric id of the draft release created by prepare-release"
+        type: string
+        required: true
+    secrets:
+      QUAY_PASSWORD:
+        description: "Quay robot password: promotes the image, pushes the chart"
+        required: true
+      DEPENDENCY_TRACK_API_KEY:
+        description: "Uploads the SBOM; without it the upload only warns"
+        required: false
+      RM_STAGING_TOKEN:
+        description: "Ingest token of the staging release manager; without it the declaration only warns"
+        required: false
+      RM_PROD_TOKEN:
+        description: "Ingest token of the prod release manager; without it the declaration only warns"
+        required: false
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to publish (X.Y.Z or X.Y.Z-<channel>.N); the draft is found by its tag"
+        type: string
+        required: true
+      request_id:
+        description: "Release-manager request (UUID4) that approved this publication; empty for a manual recovery"
+        type: string
+        required: false
+      rm_origin:
+        description: "Release manager that approved it: staging or prod (required with request_id)"
+        type: string
+        required: false
+
+permissions: {}
+
+concurrency:
+  group: publish-release-${{ inputs.version }}
+  cancel-in-progress: false
+
+env:
+  HELM_VERSION: v3.22.0
+
+jobs:
+  # The human approval of a release-manager publication happened in the
+  # release manager: check it there before anything is promoted.
+  verify-approval:
+    name: Verify the release manager approval
+    if: inputs.request_id != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+
+    steps:
+      - name: Validate the release manager inputs
+        env:
+          REQUEST_ID: ${{ inputs.request_id }}
+          RM_ORIGIN: ${{ inputs.rm_origin }}
+        run: |
+          if [[ ! "$REQUEST_ID" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$ ]]; then
+            echo "::error::request_id '${REQUEST_ID}' is not a lower-case UUID4"
+            exit 1
+          fi
+          if [[ ! "$RM_ORIGIN" =~ ^(staging|prod)$ ]]; then
+            echo "::error::rm_origin must be staging or prod with request_id (got '${RM_ORIGIN}')"
+            exit 1
+          fi
+
+      - name: Checkout the release tooling
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: bin
+          persist-credentials: false
+
+      - name: Verify the approval
+        env:
+          RM_URL: ${{ inputs.rm_origin == 'prod' && vars.RM_PROD_URL || vars.RM_STAGING_URL }}
+          RM_TOKEN: ${{ inputs.rm_origin == 'prod' && secrets.RM_PROD_TOKEN || secrets.RM_STAGING_TOKEN }}
+          REQUEST_ID: ${{ inputs.request_id }}
+          VERSION: ${{ inputs.version }}
+        run: bin/verify-release-approval.sh "$RM_URL" "$RM_TOKEN" "$REQUEST_ID" ldap-scim-bridge "$VERSION"
+
+  publish:
+    name: Publish
+    needs: [verify-approval]
+    # verify-approval is skipped outside the release-manager path: run when it
+    # succeeded or was skipped, never when it failed.
+    if: ${{ !cancelled() && (needs.verify-approval.result == 'success' || needs.verify-approval.result == 'skipped') }}
+    environment:
+      name: ${{ inputs.request_id != '' && 'release-publication-rm' || 'release-publication' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: write # release/X.Y branch, publication of the draft (creates the tag)
+
+    steps:
+      - name: Resolve the draft release
+        id: draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          VERSION: ${{ inputs.version }}
+          RELEASE_ID: ${{ inputs.release_id }}
+          REQUEST_ID: ${{ inputs.request_id }}
+          RM_ORIGIN: ${{ inputs.rm_origin }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-(alpha|beta|rc)\.[1-9][0-9]*)?$ ]]; then
+            echo "::error::version '${VERSION}' is not X.Y.Z or X.Y.Z-<alpha|beta|rc>.N"
+            exit 1
+          fi
+          if [[ -n "$RELEASE_ID" && ! "$RELEASE_ID" =~ ^[0-9]+$ ]]; then
+            echo "::error::release_id '${RELEASE_ID}' is not numeric"
+            exit 1
+          fi
+          if [[ -n "$REQUEST_ID" && ! "$REQUEST_ID" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$ ]]; then
+            echo "::error::request_id '${REQUEST_ID}' is not a lower-case UUID4"
+            exit 1
+          fi
+          if [[ -n "$REQUEST_ID" && ! "$RM_ORIGIN" =~ ^(staging|prod)$ ]]; then
+            echo "::error::rm_origin must be staging or prod with request_id"
+            exit 1
+          fi
+
+          tag="v${VERSION}"
+          release_id="$RELEASE_ID"
+          if [[ -z "$release_id" ]]; then
+            # Drafts do not resolve through /releases/tags/<tag>, and several
+            # drafts may share a tag: exactly one must match.
+            matches=$(gh api --paginate "repos/${REPO}/releases" --jq ".[] | select(.tag_name == \"${tag}\" and .draft == true) | .id" | jq -s .)
+            if [[ "$(jq length <<<"$matches")" -ne 1 ]]; then
+              echo "::error::expected exactly one draft release for ${tag}, found $(jq length <<<"$matches")"
+              exit 1
+            fi
+            release_id=$(jq -r '.[0]' <<<"$matches")
+          fi
+
+          data=$(gh api "repos/${REPO}/releases/${release_id}")
+          if [[ "$(jq -r .draft <<<"$data")" != true ]]; then
+            echo "::error::release ${release_id} is not a draft"
+            exit 1
+          fi
+          if [[ "$(jq -r .tag_name <<<"$data")" != "$tag" ]]; then
+            echo "::error::release ${release_id} is for $(jq -r .tag_name <<<"$data"), not ${tag}"
+            exit 1
+          fi
+          {
+            echo "id=${release_id}"
+            echo "target_commitish=$(jq -r .target_commitish <<<"$data")"
+            # Sent to the release managers as the release note.
+            echo "body<<GHOUTPUT_BODY_EOF"
+            jq -r .body <<<"$data"
+            echo "GHOUTPUT_BODY_EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      # Downloaded outside the workspace: the checkout below wipes it.
+      - name: Download and verify the prepared artifacts
+        id: manifest
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          VERSION: ${{ inputs.version }}
+          RELEASE_ID: ${{ steps.draft.outputs.id }}
+          DRAFT_TARGET: ${{ steps.draft.outputs.target_commitish }}
+          REQUEST_ID: ${{ inputs.request_id }}
+          RM_ORIGIN: ${{ inputs.rm_origin }}
+        run: |
+          set -euo pipefail
+          dir="${RUNNER_TEMP}/candidate"
+          mkdir -p "$dir"
+          assets=$(gh api "repos/${REPO}/releases/${RELEASE_ID}/assets")
+          # A draft's browser_download_url 404s: use the asset API.
+          download() {
+            local id
+            id=$(jq -r --arg name "$1" '.[] | select(.name == $name) | .id' <<<"$assets")
+            if [[ -z "$id" ]]; then
+              echo "::error::asset $1 missing from release ${RELEASE_ID}"
+              exit 1
+            fi
+            gh api -H "Accept: application/octet-stream" "repos/${REPO}/releases/assets/${id}" > "${dir}/$1"
+          }
+          verify() {
+            local actual
+            actual=$(sha256sum "${dir}/$1" | awk '{print $1}')
+            if [[ "$actual" != "$2" ]]; then
+              echo "::error::$1 has sha256 ${actual}, the manifest says $2"
+              exit 1
+            fi
+          }
+
+          download release-manifest.json
+          manifest="${dir}/release-manifest.json"
+          if [[ "$(jq -r .version "$manifest")" != "$VERSION" ]]; then
+            echo "::error::the manifest is for $(jq -r .version "$manifest"), not ${VERSION}"
+            exit 1
+          fi
+          source_commit=$(jq -r .source_commit "$manifest")
+          if [[ "$source_commit" != "$DRAFT_TARGET" ]]; then
+            echo "::error::the draft targets ${DRAFT_TARGET} but the manifest says ${source_commit}"
+            exit 1
+          fi
+
+          chart_file=$(jq -r .helm.file "$manifest")
+          download "$chart_file"
+          verify "$chart_file" "$(jq -r .helm.sha256 "$manifest")"
+          download sbom.json
+          verify sbom.json "$(jq -r .sbom.sha256 "$manifest")"
+          while IFS=$'\t' read -r file sha256; do
+            [[ -z "$file" ]] && continue
+            download "$file"
+            verify "$file" "$sha256"
+          done < <(jq -r '(.documents // {})[] | [.file, .sha256] | @tsv' "$manifest")
+
+          # The approval that was verified must be the one this candidate was
+          # prepared for.
+          manifest_request_id=$(jq -r '.request_id // ""' "$manifest")
+          manifest_rm_origin=$(jq -r '.rm_origin // ""' "$manifest")
+          if [[ -n "$manifest_request_id" ]]; then
+            if [[ ! "$manifest_request_id" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$ || ! "$manifest_rm_origin" =~ ^(staging|prod)$ ]]; then
+              echo "::error::the manifest holds an invalid request_id or rm_origin"
+              exit 1
+            fi
+            if [[ -n "$REQUEST_ID" && "$REQUEST_ID" != "$manifest_request_id" ]] ||
+              [[ -n "$RM_ORIGIN" && "$RM_ORIGIN" != "$manifest_rm_origin" ]]; then
+              echo "::error::dispatched for request ${REQUEST_ID} (${RM_ORIGIN}), but the candidate was prepared for ${manifest_request_id} (${manifest_rm_origin})"
+              exit 1
+            fi
+          elif [[ -n "$REQUEST_ID" ]]; then
+            echo "::warning::dispatched for request ${REQUEST_ID}, but the candidate was prepared by hand; the approval of v${VERSION} was verified all the same"
+          fi
+
+          {
+            echo "dir=${dir}"
+            echo "type=$(jq -r .type "$manifest")"
+            echo "source_branch=$(jq -r .source_branch "$manifest")"
+            echo "source_commit=${source_commit}"
+            echo "image_repository=$(jq -r .docker.repository "$manifest")"
+            echo "image_digest=$(jq -r .docker.digest "$manifest")"
+            echo "chart_file=${chart_file}"
+            echo "chart_repository=$(jq -r .helm.repository "$manifest")"
+            echo "manifest_request_id=${manifest_request_id}"
+            echo "manifest_rm_origin=${manifest_rm_origin}"
+            echo "declaration=$(jq -r --arg dir "$dir" 'if .documents.release_declaration then "\($dir)/release-declaration.json" else "" end' "$manifest")"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ steps.manifest.outputs.source_branch }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      # A candidate the release manager prepared, published by hand (no
+      # request_id): the release manager's approval is still required.
+      - name: Verify the release manager approval recorded in the manifest
+        if: steps.manifest.outputs.manifest_request_id != '' && inputs.request_id == ''
+        env:
+          RM_URL: ${{ steps.manifest.outputs.manifest_rm_origin == 'prod' && vars.RM_PROD_URL || vars.RM_STAGING_URL }}
+          RM_TOKEN: ${{ steps.manifest.outputs.manifest_rm_origin == 'prod' && secrets.RM_PROD_TOKEN || secrets.RM_STAGING_TOKEN }}
+          REQUEST_ID: ${{ steps.manifest.outputs.manifest_request_id }}
+          VERSION: ${{ inputs.version }}
+        run: bin/verify-release-approval.sh "$RM_URL" "$RM_TOKEN" "$REQUEST_ID" ldap-scim-bridge "$VERSION"
+
+      - name: Check the source and the tag
+        env:
+          SOURCE_COMMIT: ${{ steps.manifest.outputs.source_commit }}
+          SOURCE_BRANCH: ${{ steps.manifest.outputs.source_branch }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          if ! git merge-base --is-ancestor "$SOURCE_COMMIT" "origin/${SOURCE_BRANCH}"; then
+            echo "::error::${SOURCE_COMMIT} is no longer on ${SOURCE_BRANCH}: prepare the release again"
+            exit 1
+          fi
+          if git rev-parse -q --verify "refs/tags/v${VERSION}" >/dev/null &&
+            [[ "$(git rev-parse "refs/tags/v${VERSION}^{commit}")" != "$SOURCE_COMMIT" ]]; then
+            echo "::error::tag v${VERSION} already exists on another commit"
+            exit 1
+          fi
+
+      - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
+
+      # crane from the nixpkgs locked by flake.lock.
+      - name: Install crane
+        run: bin/install-nix-tool.sh crane
+
+      - name: Log in to Quay
+        env:
+          QUAY_USERNAME: ${{ vars.QUAY_USERNAME }}
+          QUAY_PASSWORD: ${{ secrets.QUAY_PASSWORD }}
+        run: printf '%s' "$QUAY_PASSWORD" | crane auth login quay.io --username "$QUAY_USERNAME" --password-stdin
+
+      # Tag the candidate's manifest under the release version: no rebuild,
+      # no new digest. Checked before tagging: `crane tag` moves an existing
+      # tag without complaint.
+      - name: Promote the image
+        env:
+          REPOSITORY: ${{ steps.manifest.outputs.image_repository }}
+          DIGEST: ${{ steps.manifest.outputs.image_digest }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          if ! crane manifest "${REPOSITORY}@${DIGEST}" > /dev/null; then
+            echo "::error::the candidate ${REPOSITORY}@${DIGEST} no longer exists"
+            exit 1
+          fi
+          if existing=$(crane digest "${REPOSITORY}:${VERSION}" 2>/dev/null); then
+            if [[ "$existing" != "$DIGEST" ]]; then
+              echo "::error::${REPOSITORY}:${VERSION} already exists as ${existing}, not ${DIGEST}"
+              exit 1
+            fi
+            echo "${REPOSITORY}:${VERSION} already published"
+          else
+            crane tag "${REPOSITORY}@${DIGEST}" "$VERSION"
+          fi
+          if [[ "$(crane digest "${REPOSITORY}:${VERSION}")" != "$DIGEST" ]]; then
+            echo "::error::${REPOSITORY}:${VERSION} does not resolve to ${DIGEST}"
+            exit 1
+          fi
+
+      - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+        with:
+          version: ${{ env.HELM_VERSION }}
+
+      # The exact package verified above. Quay has answered 500 on a manifest
+      # PUT that was in fact committed, so the presence check is in the loop:
+      # a retry must never push over a published chart.
+      - name: Publish the chart
+        id: chart
+        env:
+          QUAY_USERNAME: ${{ vars.QUAY_USERNAME }}
+          QUAY_PASSWORD: ${{ secrets.QUAY_PASSWORD }}
+          PACKAGE: ${{ steps.manifest.outputs.dir }}/${{ steps.manifest.outputs.chart_file }}
+          CHART_REPOSITORY: ${{ steps.manifest.outputs.chart_repository }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          ref="${CHART_REPOSITORY#oci://}"
+          printf '%s' "$QUAY_PASSWORD" | helm registry login quay.io --username "$QUAY_USERNAME" --password-stdin
+          pushed=false
+          for attempt in 1 2 3; do
+            if crane manifest "${ref}:${VERSION}" > /dev/null 2>&1; then
+              echo "${ref}:${VERSION} present"
+              pushed=true
+              break
+            fi
+            if helm push "$PACKAGE" "${CHART_REPOSITORY%/*}"; then
+              pushed=true
+              break
+            fi
+            echo "::warning::helm push failed (attempt ${attempt}/3)"
+            sleep 10
+          done
+          if [[ "$pushed" != true ]]; then
+            echo "::error::could not push the chart; the release is still a draft, run this workflow again"
+            exit 1
+          fi
+          {
+            echo "repository=${CHART_REPOSITORY}"
+            echo "digest=$(crane digest "${ref}:${VERSION}")"
+          } >> "$GITHUB_OUTPUT"
+
+      # The maintenance line of a new minor starts at its first GA.
+      - name: Create release/X.Y
+        if: steps.manifest.outputs.type == 'ga'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          VERSION: ${{ inputs.version }}
+          SOURCE_COMMIT: ${{ steps.manifest.outputs.source_commit }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$VERSION" =~ ^([0-9]+)\.([0-9]+)\.0$ ]]; then
+            echo "Not a X.Y.0 GA: no maintenance branch to create."
+            exit 0
+          fi
+          branch="release/${BASH_REMATCH[1]}.${BASH_REMATCH[2]}"
+          if existing=$(git ls-remote --exit-code --heads origin "$branch" | awk 'NR == 1 {print $1}'); then
+            if [[ "$existing" == "$SOURCE_COMMIT" ]] || git merge-base --is-ancestor "$SOURCE_COMMIT" "$existing" 2>/dev/null; then
+              echo "${branch} already contains ${SOURCE_COMMIT}"
+            else
+              echo "::error::${branch} exists at ${existing}, which does not contain ${SOURCE_COMMIT}"
+              exit 1
+            fi
+          else
+            gh api --method POST "repos/${REPO}/git/refs" -f "ref=refs/heads/${branch}" -f "sha=${SOURCE_COMMIT}" > /dev/null
+            echo "Created ${branch} at ${SOURCE_COMMIT}"
+          fi
+
+      # A GA from dev becomes Latest, unless a newer GA went out while this one
+      # waited for approval.
+      - name: Decide make_latest
+        id: make_latest
+        env:
+          RELEASE_TYPE: ${{ steps.manifest.outputs.type }}
+          SOURCE_BRANCH: ${{ steps.manifest.outputs.source_branch }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          value=false
+          if [[ "$RELEASE_TYPE" == ga && ! "$SOURCE_BRANCH" =~ ^release/ ]]; then
+            value=true
+            while IFS= read -r t; do
+              [[ -z "$t" ]] && continue
+              if [[ "$(bin/semver compare "${t#v}" "$VERSION")" == 1 ]]; then
+                echo "::warning::${t} is newer than v${VERSION}: not marked Latest"
+                value=false
+                break
+              fi
+            done < <(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' | grep -vE -- '-(alpha|beta|rc)\.[0-9]+$' || true)
+          fi
+          echo "value=${value}" >> "$GITHUB_OUTPUT"
+
+      # Last: the release becomes public, and the tag is created, only once the
+      # image and the chart are in place.
+      - name: Publish the release
+        id: publish_release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RELEASE_ID: ${{ steps.draft.outputs.id }}
+          MAKE_LATEST: ${{ steps.make_latest.outputs.value }}
+        run: gh api --method PATCH "repos/${REPO}/releases/${RELEASE_ID}" -F draft=false -f "make_latest=${MAKE_LATEST}" > /dev/null
+
+      # Under the final version. A Dependency-Track outage warns and does not
+      # stop the declaration to the release managers.
+      - name: Upload the SBOM to Dependency-Track
+        if: ${{ !cancelled() && steps.publish_release.outcome == 'success' }}
+        env:
+          DEPENDENCY_TRACK_API_KEY: ${{ secrets.DEPENDENCY_TRACK_API_KEY }}
+          SBOM: ${{ steps.manifest.outputs.dir }}/sbom.json
+          VERSION: ${{ inputs.version }}
+        run: |
+          if [[ -z "$DEPENDENCY_TRACK_API_KEY" ]]; then
+            echo "::warning::DEPENDENCY_TRACK_API_KEY is not set: SBOM not uploaded"
+            exit 0
+          fi
+          if ! nix run --inputs-from . tom-bombadil#upload-bom -- \
+            --project-name ldap-scim-bridge --project-version "$VERSION" --auto-create --bom-file "$SBOM"; then
+            echo "::warning::the SBOM upload to Dependency-Track failed; upload ${SBOM} again by hand"
+          fi
+
+      - name: Release date
+        id: released_at
+        if: ${{ !cancelled() && steps.publish_release.outcome == 'success' }}
+        run: echo "date=$(date -u +%F)" >> "$GITHUB_OUTPUT"
+
+      # Last step: records an already published release (upsert, safe to
+      # repeat). A failure warns and never fails the publication.
+      - name: Declare the release to the release managers
+        if: ${{ !cancelled() && steps.publish_release.outcome == 'success' }}
+        uses: wireapp/wire-rm-actions/notify-rm@bb09ea0019420aea60d39a8905a83724de05645f # main  # TODO(WPB-29309): pin vX.Y.Z
+        with:
+          rm-staging-url: ${{ vars.RM_STAGING_URL }}
+          rm-staging-token: ${{ secrets.RM_STAGING_TOKEN }}
+          rm-prod-url: ${{ vars.RM_PROD_URL }}
+          rm-prod-token: ${{ secrets.RM_PROD_TOKEN }}
+          component: ldap-scim-bridge
+          version: ${{ inputs.version }}
+          kind: ${{ steps.manifest.outputs.type == 'ga' && 'ga' || 'prerelease' }}
+          repository: ${{ steps.chart.outputs.repository }}
+          digest: ${{ steps.chart.outputs.digest }}
+          released-at: ${{ steps.released_at.outputs.date }}
+          release-url: ${{ github.server_url }}/${{ github.repository }}/releases/tag/v${{ inputs.version }}
+          release-note-title: v${{ inputs.version }}
+          release-note-description: ${{ steps.draft.outputs.body }}
+          release-declaration-file: ${{ steps.manifest.outputs.declaration }}
+          meta: |
+            team=backend
+            image=${{ steps.manifest.outputs.image_repository }}@${{ steps.manifest.outputs.image_digest }}
+            ${{ steps.manifest.outputs.manifest_request_id != '' && format('rm_request={0}', steps.manifest.outputs.manifest_request_id) || '' }}

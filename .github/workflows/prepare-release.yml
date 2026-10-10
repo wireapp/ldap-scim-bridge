@@ -15,8 +15,9 @@ run-name: Prepare ${{ inputs.type }} from ${{ inputs.source_branch }} (by @${{ g
 #   release manifest recording the identity of each.
 #
 # It never creates the git tag, publishes the final image tag or chart, makes a
-# commit or touches a deployment. publish-release.yml promotes these exact
-# artifacts after approval.
+# commit or touches a deployment. The publish job below runs publish-release.yml
+# after approval of the `release-publication` environment, unless the release
+# manager prepared the candidate.
 
 on:
   workflow_dispatch:
@@ -642,3 +643,24 @@ jobs:
               echo "Then approve the \`release-publication\` environment of this run: publication promotes these exact artifacts, it never rebuilds them."
             fi
           } >> "$GITHUB_STEP_SUMMARY"
+
+  # Waits on approval of the `release-publication` environment. Skipped when
+  # the release manager prepared the candidate: it dispatches publish-release
+  # itself, after its own approval.
+  publish:
+    name: Publish
+    needs: prepare
+    if: inputs.request_id == ''
+    # A called workflow cannot get more than its caller grants.
+    permissions:
+      contents: write # publish-release: release/X.Y branch and publication of the draft
+    uses: ./.github/workflows/publish-release.yml
+    with:
+      version: ${{ needs.prepare.outputs.version }}
+      release_id: ${{ needs.prepare.outputs.release_id }}
+    # Only the secrets publication uses, never `inherit`.
+    secrets:
+      QUAY_PASSWORD: ${{ secrets.QUAY_PASSWORD }}
+      DEPENDENCY_TRACK_API_KEY: ${{ secrets.DEPENDENCY_TRACK_API_KEY }}
+      RM_STAGING_TOKEN: ${{ secrets.RM_STAGING_TOKEN }}
+      RM_PROD_TOKEN: ${{ secrets.RM_PROD_TOKEN }}
