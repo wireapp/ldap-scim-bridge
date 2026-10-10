@@ -3,7 +3,11 @@
 `ldap-scim-bridge` uses [PVP][1]-compatible versioning.
 The changelog is available [on GitHub][2].
 
-## 0.11
+## 0.11.0
+
+No image or Hackage package was published under this number: these changes
+shipped in the `0.10.1` to `0.10.4` images. The `v0.11.0` tag marks this commit
+as the base of the SemVer versions that follow.
 
   - Migrate project setup and CI to use Nix flake
   - Remove old `Dockerfile` (build docker image with Nix)
