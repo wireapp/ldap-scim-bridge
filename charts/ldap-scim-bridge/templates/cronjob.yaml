@@ -23,6 +23,12 @@ spec:
       template:
         spec:
           restartPolicy: Never
+          {{- with .Values.image.pullSecrets }}
+          imagePullSecrets:
+            {{- range . }}
+            - name: {{ . | quote }}
+            {{- end }}
+          {{- end }}
           volumes:
             - name: "ldap-scim-bridge-config"
               secret:
