@@ -2,14 +2,12 @@
 
 [![GitHub CI](https://github.com/wireapp/ldap-scim-bridge/workflows/CI/badge.svg)](https://github.com/wireapp/ldap-scim-bridge/actions)
 [![Hackage](https://img.shields.io/hackage/v/ldap-scim-bridge.svg?logo=haskell)](https://hackage.haskell.org/package/ldap-scim-bridge)
-[![Stackage Lts](http://stackage.org/package/ldap-scim-bridge/badge/lts)](http://stackage.org/lts/package/ldap-scim-bridge)
-[![Stackage Nightly](http://stackage.org/package/ldap-scim-bridge/badge/nightly)](http://stackage.org/nightly/package/ldap-scim-bridge)
-[![AGPL-3.0-only license](https://img.shields.io/badge/license-AGPL--3.0--only-blue.svg)](LICENSE)
+[![AGPL-3.0-or-later license](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue.svg)](LICENSE)
 
 ## intro
 
 This is a small command line tool to pull data from an LDAP server and
-push it to a SCIM peer.  It is currently used in production togethre
+push it to a SCIM peer.  It is currently used in production together
 with [wire-server](https://github.com/wireapp/wire-server), but is
 designed as a more general tool.
 
@@ -89,7 +87,7 @@ docker run -it --network=host \
   ldap-scim-bridge /mnt/config.yaml
 ```
 
-This should work fine for Windows if you make sure the file path under `src` points to the right place.  You may need to you `\` instead of `/`.
+This should work fine for Windows if you make sure the file path under `src` points to the right place.  You may need to use `\` instead of `/`.
 
 If you need to add trusted certificates for TLS-encrypted connections to the store in `/etc/ssl/certs/`, you can just mount it:
 
@@ -258,7 +256,7 @@ fail.
 This will trigger a github workflow that builds and uploads the docker
 images to quay.io.
 
-- consider releasing to hackage (see `./admin/publish.sh`)
+- consider releasing to hackage (`cabal sdist`, then `cabal upload`)
 - bump version in cabal file to upcoming version
 
 ## future work
