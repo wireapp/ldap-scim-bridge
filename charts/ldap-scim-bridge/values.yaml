@@ -42,19 +42,17 @@ existingSecret: ""
 # values of the openldap test chart:
 #
 # config:
-#   # One of Trace, Debug, Info, Warn, Error, Fatal (least noisy). Required by
-#   # the bridge.
-#   logLevel: "Info"
+#   logLevel: "Info"                  # (required) Trace, Debug, Info, Warn, Error or Fatal
 #   ldapSource:
-#     tls: true                       # use TLS to reach LDAP
+#     tls: true                       # (required) use TLS to reach LDAP
 #     host: "openldap"                # (required)
 #     port: 389                       # (required)
 #     dn: "cn=admin,dc=nodomain"      # (required) bind DN
 #     password: "admin"               # (required) bind password
-#     codec: "utf8"                   # utf8 or latin1
+#     codec: "utf8"                   # (required) utf8 or latin1
 #     search:
 #       base: "ou=People,dc=nodomain" # (required)
-#       objectClass: "account"
+#       objectClass: "account"        # (required)
 #       # Any other key is an extra attribute filter, e.g.:
 #       # memberOf: "cn=wire,ou=Groups,dc=nodomain"
 #     # Optional: entries carrying this attribute value are deleted in SCIM.
@@ -66,10 +64,10 @@ existingSecret: ""
 #       base: "ou=DeletedPeople,dc=nodomain"
 #       objectClass: "account"
 #   scimTarget:
-#     tls: true                       # use TLS to reach the SCIM peer
+#     tls: true                       # (required) use TLS to reach the SCIM peer
 #     host: "spar"                    # (required)
 #     port: 8080                      # (required)
-#     path: "/scim/v2"
+#     path: "/scim/v2"                # (required) path of the SCIM API
 #     token: "Bearer <token>"         # (required) SCIM token from team settings
 #   # SCIM attribute: LDAP attribute.
 #   mapping:
