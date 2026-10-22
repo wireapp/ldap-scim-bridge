@@ -18,5 +18,5 @@
 ## Checklist
 
 - [ ] Commit subjects follow Conventional Commits (`type(scope): summary`); they make the release changelog.
-- [ ] A breaking change ends its subject with `[breaking]` and has a `BREAKING CHANGE: <what operators must do>` footer.
+- [ ] A breaking change has `!` after its type and `[breaking]` at the end of its subject (`feat(chart)!: summary [breaking]`), and a `BREAKING CHANGE: <what operators must do>` footer.
 - [ ] A change of the bridge configuration or of the chart values is reflected in `docs/configuration.md` and `charts/ldap-scim-bridge/values.yaml`.

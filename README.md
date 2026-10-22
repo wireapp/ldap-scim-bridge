@@ -266,9 +266,11 @@ fail.
 Commit subjects follow [Conventional Commits](https://www.conventionalcommits.org):
 `type(scope): summary`, with `feat`, `fix`, `docs`, `ci`, `build`, `chore`,
 `refactor` or `test`. Release changelogs are generated from them, and commits
-without a type are left out. Flag a breaking change with `[breaking]` at the
-end of the subject **and** a `BREAKING CHANGE: <what operators must do>`
-footer, so the release manager surfaces it.
+without a type are left out. Flag a breaking change with `!` after the type
+**and** `[breaking]` at the end of the subject (`feat(chart)!: summary
+[breaking]`), plus a `BREAKING CHANGE: <what operators must do>` footer, so the
+release changelog and the release manager surface it. Both markers are needed
+until a single Wire-wide convention is agreed.
 
 ## versions and releases
 
