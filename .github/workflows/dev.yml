@@ -1,0 +1,170 @@
+name: Dev build
+
+# ADR-0018 dev build: every push to `dev` and `release/**`, and on demand,
+# publishes the image (quay.io/wire/ldap-scim-bridge) and the Helm chart
+# (oci://quay.io/wire/charts/dev/ldap-scim-bridge) under one version, computed by
+# the shared `version` action, then declares it to the release managers.
+#
+# Pre-releases and GA versions are built once by prepare-release.yml and
+# promoted by publish-release.yml. Tags never trigger this workflow: the release
+# tag is created by the publication.
+on:
+  push:
+    branches:
+      - dev
+      - "release/**"
+  workflow_dispatch:
+
+permissions: {}
+
+# Never cancel a run that may be publishing.
+concurrency:
+  group: dev-build-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  IMAGE_REPOSITORY: quay.io/wire/ldap-scim-bridge
+  CHART_PATH: charts/ldap-scim-bridge
+  HELM_VERSION: v3.22.0
+
+jobs:
+  dev-build:
+    name: Dev build
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      id-token: write # OIDC token of the run: Quay and the release managers
+
+    steps:
+      # The version derives from the nearest tag: history and tags are needed.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Compute the version
+        id: version
+        uses: wireapp/wire-rm-actions/version@813f008b900b1ad3284502f97cac343d80b1836b # v0.1.0
+        with:
+          release-branches: ^(dev|release/.+)$
+          tag-prefix: v
+
+      - name: Check this is a dev build
+        env:
+          KIND: ${{ steps.version.outputs.kind }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          if [[ "$KIND" != dev ]]; then
+            echo "::error::expected a dev build, got '${KIND}' (${VERSION})"
+            exit 1
+          fi
+          echo "### Dev build \`${VERSION}\`" >> "$GITHUB_STEP_SUMMARY"
+
+      # No robot password: the federated robot accepts the OIDC token of this
+      # job (subjects repo:wireapp/ldap-scim-bridge:ref:refs/heads/dev and one per
+      # release/X.Y branch). The robot token lasts one hour.
+      - name: Log in to quay.io with the OIDC token of the run
+        id: quay
+        uses: wireapp/wire-rm-actions/quay-login@813f008b900b1ad3284502f97cac343d80b1836b # v0.1.0
+        with:
+          robot: wire+gha_ldap_scim_bridge
+
+      - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
+
+      # The image is built by Nix, not by the shared build-image action (it needs a
+      # Dockerfile). flake.nix sets the ADR-0020 OCI labels; --impure lets it read
+      # the version and, for dev builds only, the Quay expiration. The tag inside
+      # the archive stays `build`: the published tag is set at push time.
+      - name: Build the image
+        env:
+          LSB_IMAGE_VERSION: ${{ steps.version.outputs.version }}
+          LSB_IMAGE_EXPIRES_AFTER: 90d
+        run: nix build --impure .#dockerImage --out-link "${RUNNER_TEMP}/image.tar.gz"
+
+      # skopeo from the nixpkgs locked by flake.lock.
+      - name: Install skopeo
+        run: bin/install-nix-tool.sh skopeo
+
+      - name: Push the image
+        id: image
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          REGISTRY_USERNAME: ${{ steps.quay.outputs.username }}
+          REGISTRY_PASSWORD: ${{ steps.quay.outputs.token }}
+        run: bin/push-image.sh "${RUNNER_TEMP}/image.tar.gz" "${IMAGE_REPOSITORY}" "${VERSION}"
+
+      - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+        with:
+          version: ${{ env.HELM_VERSION }}
+
+      # publish-chart sets the Quay expiration of the dev chart with oras.
+      - uses: oras-project/setup-oras@005458ad77f1c8facd38a094e4af2e69e5607ff4 # v2.0.2
+
+      # Chart version == appVersion == image tag (values.yaml leaves image.tag
+      # empty). Dev charts expire after 90 days, like the dev image.
+      - name: Publish the chart to oci://quay.io/wire/charts/dev/ldap-scim-bridge
+        id: chart
+        uses: wireapp/wire-rm-actions/publish-chart@813f008b900b1ad3284502f97cac343d80b1836b # v0.1.0
+        with:
+          chart-path: ${{ env.CHART_PATH }}
+          version: ${{ steps.version.outputs.version }}
+          channel: dev
+          expires-after: 90d
+          username: ${{ steps.quay.outputs.username }}
+          password: ${{ steps.quay.outputs.token }}
+
+      # The dev release manifest (ADR-0020 section 2, kind dev):
+      # publication/compatibility.yaml and the release note of the version the
+      # build leads to. Never blocking: a failure only means the version is
+      # declared without manifest.
+      - name: Release documents of the dev build
+        id: documents
+        continue-on-error: true
+        uses: wireapp/wire-rm-actions/release-documents@813f008b900b1ad3284502f97cac343d80b1836b # v0.1.0
+        with:
+          component: ldap-scim-bridge
+          version: ${{ steps.version.outputs.version }}
+          release-type: dev
+
+      - name: Write the dev release manifest
+        id: manifest
+        continue-on-error: true
+        uses: wireapp/wire-rm-actions/release-manifest@813f008b900b1ad3284502f97cac343d80b1836b # v0.1.0
+        with:
+          mode: write
+          manifest: ${{ runner.temp }}/release-manifest.json
+          component: ldap-scim-bridge
+          version: ${{ steps.version.outputs.version }}
+          release-type: dev
+          source-repository: ${{ github.server_url }}/${{ github.repository }}
+          source-ref: ${{ github.ref_name }}
+          source-commit: ${{ github.sha }}
+          image-repository: ${{ env.IMAGE_REPOSITORY }}
+          image-digest: ${{ steps.image.outputs.digest }}
+          chart-repository: ${{ steps.chart.outputs.repository }}
+          chart-digest: ${{ steps.chart.outputs.digest }}
+          documents-json: ${{ steps.documents.outputs.documents-json || '{}' }}
+
+      - name: Report a dev build without manifest
+        if: steps.manifest.outcome != 'success'
+        run: |
+          echo "::warning title=No release manifest::the dev build is declared without manifest: the release manager gets no requires nor provides for it (see the step above)"
+          echo "- :warning: release manifest: not written, the version is declared without it" >> "$GITHUB_STEP_SUMMARY"
+
+      # Last step, to both release managers in OIDC mode (a GitHub OIDC token of
+      # this run per audience, no stored secret). An unset URL is skipped; a
+      # failure is a loud warning and keeps the build green.
+      - name: Declare the version to the release managers
+        uses: wireapp/wire-rm-actions/notify-rm@813f008b900b1ad3284502f97cac343d80b1836b # v0.1.0
+        with:
+          rm-staging-url: ${{ vars.RM_STAGING_URL }}
+          rm-staging-audience: wire-release-manager-staging
+          rm-prod-url: ${{ vars.RM_PROD_URL }}
+          rm-prod-audience: wire-release-manager-prod
+          component: ldap-scim-bridge
+          version: ${{ steps.version.outputs.version }}
+          kind: ${{ steps.version.outputs.kind }}
+          repository: ${{ steps.chart.outputs.repository }}
+          digest: ${{ steps.chart.outputs.digest }}
+          release-manifest-file: ${{ steps.manifest.outcome == 'success' && steps.manifest.outputs.manifest || '' }}
