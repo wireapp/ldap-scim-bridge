@@ -9,9 +9,13 @@ The chart version, its `appVersion` and the image tag are the same build
 version (`0.12.0`, `0.12.0-rc.1`, …). Until 5.x it was published from
 wire-server under the wire-server version.
 
+**Always pin `--version`.** The 5.x charts published by wire-server stay in
+the same repositories under the same name, and sort above 0.12.0: without
+`--version`, Helm picks the highest version, an old wire-server one.
+
 ## Install
 
-Releases and pre-releases:
+Releases (GA):
 
 ```sh
 helm upgrade --install -n wire ldap-scim-bridge \
@@ -19,8 +23,12 @@ helm upgrade --install -n wire ldap-scim-bridge \
   -f my-values.yaml
 ```
 
-Dev builds (expire after 90 days) are under
-`oci://quay.io/wire/charts/dev/ldap-scim-bridge`.
+Pre-releases (`X.Y.Z-rc.N`, …) and dev builds (which expire after 90 days)
+are under `oci://quay.io/wire/charts/dev/ldap-scim-bridge`.
+
+Until wire-builds reads OCI, releases are also pushed to the S3 Helm
+repositories `https://s3-eu-west-1.amazonaws.com/public.wire.com/charts` (GA)
+and `…/charts-develop` (pre-releases), with the same versions.
 
 `my-values.yaml` must provide the bridge configuration under `config` (see
 `values.yaml` for the reference and
