@@ -82,17 +82,14 @@ jobs:
           LSB_IMAGE_EXPIRES_AFTER: 90d
         run: nix build --impure .#dockerImage --out-link "${RUNNER_TEMP}/image.tar.gz"
 
-      # skopeo from the nixpkgs locked by flake.lock.
-      - name: Install skopeo
-        run: bin/install-nix-tool.sh skopeo
-
+      # skopeo from the ci devShell of flake.nix, locked by flake.lock.
       - name: Push the image
         id: image
         env:
           VERSION: ${{ steps.version.outputs.version }}
           REGISTRY_USERNAME: ${{ steps.quay.outputs.username }}
           REGISTRY_PASSWORD: ${{ steps.quay.outputs.token }}
-        run: bin/push-image.sh "${RUNNER_TEMP}/image.tar.gz" "${IMAGE_REPOSITORY}" "${VERSION}"
+        run: nix develop .#ci --command bin/push-image.sh "${RUNNER_TEMP}/image.tar.gz" "${IMAGE_REPOSITORY}" "${VERSION}"
 
       - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
         with:

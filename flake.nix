@@ -130,8 +130,10 @@
         # Development shell with required dependencies
         devShells = {
           default = additionalDevShells.ghc96;
+          # The tools of the GitHub workflows: the linters, and skopeo and
+          # crane for the image pushes (`nix develop .#ci --command ...`).
           ci = lintPkgs.mkShell {
-            packages = [ lint-workflows lintPkgs.actionlint lintPkgs.shellcheck lintPkgs.zizmor ];
+            packages = [ lint-workflows lintPkgs.actionlint lintPkgs.shellcheck lintPkgs.zizmor lintPkgs.skopeo lintPkgs.crane ];
           };
         } // additionalDevShells;
 
