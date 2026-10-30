@@ -1,0 +1,464 @@
+name: Prepare release
+
+# Shown as the run title in the Actions list.
+run-name: Prepare ${{ inputs.type }} from ${{ inputs.source_branch }} (by @${{ github.actor }})
+
+# Preparation step of a release (ADR-0020, ADR-0021).
+#
+# Validates the four dispatch inputs, computes the version from the v-prefixed tags (dev is
+# the trunk), gates on the CI of the source commit, builds the candidate image exactly once
+# with Nix, packages the chart, builds the SBOM, gathers the release note and the release
+# declaration (publication/), freezes the release manifest and opens a DRAFT GitHub Release
+# v<version> carrying every artifact as an asset.
+#
+# Manual runs only: the release manager has no write access to this repository and does not
+# dispatch this workflow.
+#
+# Every step runs a shared action of wireapp/wire-rm-actions, except the image build (Nix,
+# not a Dockerfile: bin/push-image.sh, as in dev.yml), the chart packaging (publish-chart
+# has no package-only mode), the SBOM (tom-bombadil, locked by flake.lock) and the
+# summaries.
+#
+# It never creates the release git tag, writes the final image tag, pushes the chart to its
+# channel or to S3, or commits anything. Publication (promoting these exact artifacts by
+# digest and publishing the draft) is publish-release.yml, called by the `publish` job below
+# and gated on the approval of the `release-publication` environment.
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_branch:
+        description: 'Branch to release from: dev, or a maintained release/X.Y line'
+        type: string
+        default: dev
+        required: true
+      type:
+        description: 'Release channel'
+        type: choice
+        options: [alpha, beta, rc, ga]
+        default: rc
+        required: true
+      bump:
+        description: 'Only applies to a GA cut from a GA, and to the first pre-release after a GA (ignored when continuing or promoting a pre-release)'
+        type: choice
+        options: [patch, minor, major]
+        default: patch
+        required: true
+      force:
+        description: 'Bypass the CI status gate on the source commit (logged loudly)'
+        type: boolean
+        default: false
+        required: false
+
+permissions: {}
+
+# Serialise preparation per source branch and channel: GitHub permits several drafts sharing
+# one tag_name, and the "does a release already exist" check runs before the draft is created.
+concurrency:
+  group: prepare-release-${{ inputs.source_branch }}-${{ inputs.type }}
+  cancel-in-progress: false
+
+env:
+  IMAGE_REPOSITORY: quay.io/wire/ldap-scim-bridge
+  CHART_PATH: charts/ldap-scim-bridge
+  HELM_VERSION: v3.22.0
+
+jobs:
+  prepare:
+    name: Prepare release candidate
+    runs-on: ubuntu-26.04
+    timeout-minutes: 60
+    permissions:
+      contents: write   # draft release and its assets
+      checks: read      # CI gate
+      statuses: read    # CI gate, legacy statuses
+      actions: read     # CI gate, own workflow runs
+      id-token: write   # OIDC token of the run, exchanged for a Quay robot token
+
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      release_id: ${{ steps.release.outputs.id }}
+
+    steps:
+      # First step, before any checkout: every input is validated by regex.
+      - name: Validate inputs
+        id: inputs
+        uses: wireapp/wire-rm-actions/release-inputs@813f008b900b1ad3284502f97cac343d80b1836b # v0.1.0
+        with:
+          source-branch: ${{ inputs.source_branch }}
+          type: ${{ inputs.type }}
+          version-bump: ${{ inputs.bump }}
+          force: ${{ inputs.force }}
+
+      # ADR-0020 section 1: a pre-release chart goes to the dev channel, only a GA to stable.
+      - name: Chart channel
+        id: channel
+        env:
+          RELEASE_TYPE: ${{ inputs.type }}
+        run: |
+          set -euo pipefail
+          channel=dev
+          if [[ "$RELEASE_TYPE" == "ga" ]]; then
+            channel=stable
+          fi
+          echo "channel=${channel}" >> "$GITHUB_OUTPUT"
+          echo "repository=oci://quay.io/wire/charts/${channel}/ldap-scim-bridge" >> "$GITHUB_OUTPUT"
+
+      - name: Verify source branch exists
+        uses: wireapp/wire-rm-actions/release-source@813f008b900b1ad3284502f97cac343d80b1836b # v0.1.0
+        with:
+          mode: verify
+          source-branch: ${{ inputs.source_branch }}
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.source_branch }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      # Record the exact commit now: a later move of the branch must not change the candidate.
+      - name: Resolve source commit
+        id: source
+        uses: wireapp/wire-rm-actions/release-source@813f008b900b1ad3284502f97cac343d80b1836b # v0.1.0
+        with:
+          mode: resolve
+          source-branch: ${{ inputs.source_branch }}
+
+      # From the v-prefixed tags reachable from origin/<source_branch>. The first SemVer line
+      # starts from the v5.0.0 anchor: type rc and bump major give 6.0.0-rc.1.
+      - name: Compute target version
+        id: version
+        uses: wireapp/wire-rm-actions/version@813f008b900b1ad3284502f97cac343d80b1836b # v0.1.0
+        with:
+          mode: release
+          source-branch: ${{ inputs.source_branch }}
+          release-type: ${{ steps.inputs.outputs.release-type }}
+          version-bump: ${{ inputs.bump }}
+
+      - name: Summarise the candidate
+        uses: wireapp/wire-rm-actions/release-source@813f008b900b1ad3284502f97cac343d80b1836b # v0.1.0
+        with:
+          mode: summary
+          source-branch: ${{ inputs.source_branch }}
+          version: ${{ steps.version.outputs.version }}
+          release-type: ${{ inputs.type }}
+          source-sha: ${{ steps.source.outputs.sha }}
+          base-tag: ${{ steps.version.outputs.base-tag }}
+          from-tag: ${{ steps.version.outputs.from-tag }}
+          note: Building the candidate image, the chart and the SBOM. The draft release link appears here once created.
+
+      # Cabal versions cannot carry a pre-release suffix: the .cabal file holds the base
+      # version of the release being prepared (6.0.0 for 6.0.0-rc.1 and for 6.0.0).
+      - name: Check the cabal version
+        env:
+          TARGET: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          base="${TARGET%%-*}"
+          cabal_version=$(sed -n 's/^version:[[:space:]]*//p' ldap-scim-bridge.cabal)
+          if [[ "$cabal_version" != "$base" ]]; then
+            echo "::error::ldap-scim-bridge.cabal says version ${cabal_version}, expected ${base} for ${TARGET}: bump it (and CHANGELOG.md) on the source branch first"
+            exit 1
+          fi
+
+      # Checked before anything is built; release-manifest reads the file again.
+      - name: Check the compatibility file
+        uses: wireapp/wire-rm-actions/compatibility@813f008b900b1ad3284502f97cac343d80b1836b # v0.1.0
+        with:
+          file: publication/compatibility.yaml
+
+      # No release (draft or published) nor tag exists for the version, and every check run
+      # on the source commit passed (latest outcome per check, this workflow's own runs left
+      # out); an empty set fails. `force` only bypasses the checks gate, logged loudly.
+      - name: CI gate
+        uses: wireapp/wire-rm-actions/ci-gate@813f008b900b1ad3284502f97cac343d80b1836b # v0.1.0
+        with:
+          version: ${{ steps.version.outputs.version }}
+          source-commit: ${{ steps.source.outputs.sha }}
+          force: ${{ steps.inputs.outputs.force }}
+          checks-from: all
+
+      # ── Build once: the candidate image ────────────────────────────────────────
+      - name: Log in to quay.io with the OIDC token of the run
+        id: quay
+        uses: wireapp/wire-rm-actions/quay-login@813f008b900b1ad3284502f97cac343d80b1836b # v0.1.0
+        with:
+          robot: wire+gha_ldap_scim_bridge
+
+      - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
+
+      # flake.nix sets the ADR-0020 OCI labels with the release version. Never an
+      # expiration: the label is part of the digest that publication promotes.
+      - name: Build the image
+        env:
+          LSB_IMAGE_VERSION: ${{ steps.version.outputs.version }}
+        run: nix build --impure .#dockerImage --out-link "${RUNNER_TEMP}/image.tar.gz"
+
+      # skopeo from the ci devShell of flake.nix.
+      - name: Push the candidate image (built exactly once)
+        id: image
+        env:
+          TAG: ${{ steps.version.outputs.version }}-candidate-${{ github.run_id }}
+          REGISTRY_USERNAME: ${{ steps.quay.outputs.username }}
+          REGISTRY_PASSWORD: ${{ steps.quay.outputs.token }}
+        run: |
+          set -euo pipefail
+          nix develop .#ci --command bin/push-image.sh "${RUNNER_TEMP}/image.tar.gz" "$IMAGE_REPOSITORY" "$TAG"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+
+      # ── Chart: packaged locally, pushed only at publication ────────────────────
+      - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+        with:
+          version: ${{ env.HELM_VERSION }}
+
+      # Chart version == appVersion == image tag (ADR-0018); values.yaml leaves image.tag empty.
+      - name: Package the chart
+        id: chart
+        env:
+          TARGET: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          release_dir="${RUNNER_TEMP}/release"
+          mkdir -p "$release_dir"
+          helm lint --strict "$CHART_PATH" -f ci/helm/values-test.yaml
+          helm package "$CHART_PATH" --version "$TARGET" --app-version "$TARGET" --destination "$release_dir" >/dev/null
+          package_file="ldap-scim-bridge-${TARGET}.tgz"
+          [[ -f "${release_dir}/${package_file}" ]] || { echo "error: helm package did not produce ${package_file}" >&2; exit 1; }
+          sha256=$(sha256sum "${release_dir}/${package_file}" | awk '{print $1}')
+          {
+            echo "release_dir=$release_dir"
+            echo "package_file=$package_file"
+            echo "package_path=${release_dir}/${package_file}"
+            echo "sha256=$sha256"
+          } >> "$GITHUB_OUTPUT"
+          echo "Candidate chart: ${package_file} (sha256 ${sha256})"
+
+      # Dependencies of the release, recorded in the manifest; publish-release uploads it to
+      # Dependency-Track for a GA. tom-bombadil is the revision locked in flake.lock.
+      - name: Build the SBOM
+        id: sbom
+        env:
+          RELEASE_DIR: ${{ steps.chart.outputs.release_dir }}
+        run: |
+          set -euo pipefail
+          nix build .#bomDependencies --no-link
+          nix run --inputs-from . tom-bombadil#create-sbom -- --root-package-name ldap-scim-bridge
+          mv sbom.json "${RELEASE_DIR}/sbom.json"
+          sha256=$(sha256sum "${RELEASE_DIR}/sbom.json" | awk '{print $1}')
+          echo "artifacts=$(jq -cn --arg sha256 "$sha256" '[{type: "sbom", file: "sbom.json", sha256: $sha256}]')" >> "$GITHUB_OUTPUT"
+
+      # ── Documents and manifest ─────────────────────────────────────────────────
+      - name: Gather the release documents
+        id: documents
+        uses: wireapp/wire-rm-actions/release-documents@813f008b900b1ad3284502f97cac343d80b1836b # v0.1.0
+        with:
+          component: ldap-scim-bridge
+          version: ${{ steps.version.outputs.version }}
+          release-type: ${{ inputs.type }}
+          note-input: ignore
+          out-dir: ${{ steps.chart.outputs.release_dir }}
+
+      - name: Write the release manifest (frozen)
+        id: manifest
+        uses: wireapp/wire-rm-actions/release-manifest@813f008b900b1ad3284502f97cac343d80b1836b # v0.1.0
+        with:
+          mode: write
+          manifest: ${{ steps.chart.outputs.release_dir }}/release-manifest.json
+          component: ldap-scim-bridge
+          version: ${{ steps.version.outputs.version }}
+          release-type: ${{ inputs.type }}
+          source-repository: ${{ github.server_url }}/${{ github.repository }}
+          source-ref: ${{ inputs.source_branch }}
+          source-commit: ${{ steps.source.outputs.sha }}
+          image-repository: ${{ env.IMAGE_REPOSITORY }}
+          image-digest: ${{ steps.image.outputs.digest }}
+          image-candidate-tag: ${{ steps.image.outputs.tag }}
+          chart-repository: ${{ steps.channel.outputs.repository }}
+          chart-file: ${{ steps.chart.outputs.package_file }}
+          chart-sha256: ${{ steps.chart.outputs.sha256 }}
+          extra-artifacts-json: ${{ steps.sbom.outputs.artifacts }}
+          documents-json: ${{ steps.documents.outputs.documents-json }}
+
+      # ── Draft release ──────────────────────────────────────────────────────────
+      # The changes come from the conventional commit subjects since the previous release tag.
+      # lsb merges with merge commits: their commits get the link of the pull request.
+      - name: Changelog since the previous release
+        id: changelog
+        uses: wireapp/wire-rm-actions/changelog@813f008b900b1ad3284502f97cac343d80b1836b # v0.1.0
+        with:
+          from-tag: ${{ steps.version.outputs.from-tag }}
+          to-ref: ${{ steps.source.outputs.sha }}
+          heading: "false"
+          exclude: chore docs refactor style test runfix
+          merge-commits: pull-request
+          collapse: ci
+          output-file: ${{ runner.temp }}/changelog.md
+
+      # Written once and never rewritten: it must read correctly after publication. A GA
+      # embeds the note; a pre-release only links to it.
+      - name: Write the release body
+        id: body
+        env:
+          RELEASE_TYPE: ${{ inputs.type }}
+          CHART_REPOSITORY: ${{ steps.channel.outputs.repository }}
+          TARGET: ${{ steps.version.outputs.version }}
+          FROM_TAG: ${{ steps.version.outputs.from-tag }}
+          SOURCE_COMMIT: ${{ steps.source.outputs.sha }}
+          CHANGELOG_FILE: ${{ steps.changelog.outputs.file }}
+          CHANGELOG_COUNT: ${{ steps.changelog.outputs.count }}
+          IMAGE_DIGEST: ${{ steps.image.outputs.digest }}
+          CHART_SHA256: ${{ steps.chart.outputs.sha256 }}
+          RELEASE_DIR: ${{ steps.chart.outputs.release_dir }}
+          NOTE_FILE: ${{ steps.documents.outputs.note-file }}
+          NOTE_PATH: ${{ steps.documents.outputs.note-path }}
+          DECLARATION_FILE: ${{ steps.documents.outputs.declaration-file }}
+          DECLARATION_SOURCE: ${{ steps.documents.outputs.declaration-source }}
+          REPOSITORY: ${{ github.repository }}
+          SERVER_URL: ${{ github.server_url }}
+        run: |
+          set -euo pipefail
+          base_version="${TARGET%%-*}"
+          notes_url=""
+          if [[ -n "$NOTE_PATH" ]]; then
+            notes_url="${SERVER_URL}/${REPOSITORY}/blob/${SOURCE_COMMIT}/${NOTE_PATH}"
+          fi
+
+          body_file="${RUNNER_TEMP}/release-body.md"
+          {
+            if [[ "$RELEASE_TYPE" == "ga" ]]; then
+              cat "${RELEASE_DIR}/${NOTE_FILE}"
+              echo
+              echo "---"
+              echo
+            else
+              echo "> [!IMPORTANT]"
+              echo "> **This is a pre-release (\`${RELEASE_TYPE}\`) and must be treated accordingly.** It is a candidate for \`${base_version}\`, not a shipped release: deploy it to non-production environments only, and expect it to be superseded."
+              if [[ -n "$notes_url" ]]; then
+                echo ">"
+                echo "> Release notes for ${base_version}: [\`${NOTE_PATH}\`](${notes_url})"
+              else
+                echo ">"
+                echo "> Release notes for ${base_version} are not written yet; they will accompany the GA."
+              fi
+              echo
+              echo "---"
+              echo
+            fi
+            echo "### Changes since \`${FROM_TAG}\`"
+            echo
+            if (( CHANGELOG_COUNT == 0 )); then
+              echo "_No user-facing changes since \`${FROM_TAG}\`._"
+            else
+              cat "$CHANGELOG_FILE"
+            fi
+            echo
+            echo "---"
+            echo
+            echo "### Artifacts"
+            echo
+            echo "| | |"
+            echo "| --- | --- |"
+            echo "| Docker image | \`${IMAGE_REPOSITORY}:${TARGET}\` |"
+            echo "| Helm chart | \`${CHART_REPOSITORY}:${TARGET}\` |"
+            if [[ "$RELEASE_TYPE" == "ga" ]]; then
+              echo "| Helm chart (S3, interim) | \`charts\` |"
+            else
+              echo "| Helm chart (S3, interim) | \`charts-develop\` |"
+            fi
+            echo "| SBOM | \`sbom.json\`, attached below |"
+            echo "| Release manifest | \`release-manifest.json\`, attached below |"
+            if [[ -n "$DECLARATION_FILE" ]]; then
+              echo "| Release declaration | \`release-declaration.json\`, attached below (${DECLARATION_SOURCE//_/ }) |"
+            fi
+            echo
+            echo "<details>"
+            echo "<summary>Checksums and provenance</summary>"
+            echo
+            echo "| | |"
+            echo "| --- | --- |"
+            echo "| Source commit | \`${SOURCE_COMMIT}\` |"
+            echo "| Image digest | \`${IMAGE_DIGEST}\` |"
+            echo "| Chart SHA256 | \`${CHART_SHA256}\` |"
+            echo
+            echo "These identities are fixed before approval and are not recomputed at publication; \`release-manifest.json\` attached to this release is the authoritative record."
+            echo
+            echo "</details>"
+          } > "$body_file"
+          echo "file=$body_file" >> "$GITHUB_OUTPUT"
+
+      - name: Create draft GitHub Release
+        id: release
+        uses: wireapp/wire-rm-actions/draft-release@813f008b900b1ad3284502f97cac343d80b1836b # v0.1.0
+        with:
+          mode: create
+          version: ${{ steps.version.outputs.version }}
+          target: ${{ steps.source.outputs.sha }}
+          body-file: ${{ steps.body.outputs.file }}
+          assets: |
+            ${{ steps.chart.outputs.package_path }}
+            ${{ steps.chart.outputs.release_dir }}/sbom.json
+            ${{ steps.chart.outputs.release_dir }}/release-manifest.json
+            ${{ steps.documents.outputs.note-file && format('{0}/{1}', steps.chart.outputs.release_dir, steps.documents.outputs.note-file) || '' }}
+            ${{ steps.documents.outputs.declaration-file && format('{0}/{1}', steps.chart.outputs.release_dir, steps.documents.outputs.declaration-file) || '' }}
+
+      - name: Summarise the draft
+        env:
+          CANDIDATE_TAG: ${{ steps.image.outputs.tag }}
+          IMAGE_DIGEST: ${{ steps.image.outputs.digest }}
+          CHART_SHA256: ${{ steps.chart.outputs.sha256 }}
+          PACKAGE_FILE: ${{ steps.chart.outputs.package_file }}
+          NOTE_FILE: ${{ steps.documents.outputs.note-file }}
+          NOTE_PATH: ${{ steps.documents.outputs.note-path }}
+          DECLARATION_FILE: ${{ steps.documents.outputs.declaration-file }}
+          DECLARATION_SOURCE: ${{ steps.documents.outputs.declaration-source }}
+        run: |
+          set -euo pipefail
+          {
+            echo
+            echo "| Asset | Identity |"
+            echo "| --- | --- |"
+            echo "| \`${PACKAGE_FILE}\` | sha256 \`${CHART_SHA256}\` |"
+            echo "| \`sbom.json\` | in the manifest |"
+            echo "| \`release-manifest.json\` | frozen, image digest \`${IMAGE_DIGEST}\` |"
+            if [[ -n "$NOTE_FILE" ]]; then
+              echo "| \`${NOTE_FILE}\` | from \`${NOTE_PATH}\` |"
+            else
+              echo "| release note | none (pre-release without a note) |"
+            fi
+            if [[ -n "$DECLARATION_FILE" ]]; then
+              echo "| \`${DECLARATION_FILE}\` | from the ${DECLARATION_SOURCE//_/ } |"
+            else
+              echo "| release declaration | none (optional for a pre-release) |"
+            fi
+            echo
+            echo "#### Before approving"
+            echo
+            echo "Install the attached chart with the candidate image in a validation environment, for example:"
+            echo
+            echo "\`\`\`"
+            echo "helm upgrade --install ldap-scim-bridge ${PACKAGE_FILE} --set image.tag=${CANDIDATE_TAG} ..."
+            echo "\`\`\`"
+            echo
+            echo "Then approve the \`release-publication\` environment on this run to publish. Publication promotes these exact artifacts by digest; it never rebuilds them."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # Waits on the approval of the release-publication environment. A called workflow's
+  # GITHUB_TOKEN permissions can only be kept or reduced through the chain: with the
+  # top-level `permissions: {}` here, publish-release's own permissions are granted here.
+  publish:
+    name: Publish
+    needs: prepare
+    permissions:
+      contents: write
+      id-token: write   # granted to publish-release: Quay and the release managers
+    uses: ./.github/workflows/publish-release.yml
+    with:
+      version: ${{ needs.prepare.outputs.version }}
+      release_id: ${{ needs.prepare.outputs.release_id }}
+    # Passed explicitly, never `secrets: inherit`: publication receives only what it uses.
+    secrets:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_REGION: ${{ secrets.AWS_REGION }}
+      DEPENDENCY_TRACK_API_KEY: ${{ secrets.DEPENDENCY_TRACK_API_KEY }}
