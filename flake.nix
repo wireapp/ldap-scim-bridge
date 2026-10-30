@@ -3,6 +3,8 @@
 
   inputs = {
     nixpkgs.url = "nixpkgs/nixos-24.11";
+    # Recent workflow linters (actionlint, zizmor), independent of the build.
+    nixpkgs-lint.url = "nixpkgs/nixos-26.05";
     flake-utils.url = "github:numtide/flake-utils";
     tom-bombadil.url = "github:wireapp/tom-bombadil";
   };
@@ -10,6 +12,7 @@
   outputs =
     { self
     , nixpkgs
+    , nixpkgs-lint
     , flake-utils
     , tom-bombadil
     }:
@@ -17,6 +20,7 @@
       system:
       let
         pkgs = import nixpkgs { inherit system; };
+        lintPkgs = import nixpkgs-lint { inherit system; };
 
         haskellPackagesOverlay = {
           overrides = self: super: {
@@ -71,12 +75,31 @@
           '';
         };
 
+        # The checks of workflows-lint.yml, also run by `nix flake check`.
+        lint-workflows = lintPkgs.writeShellApplication {
+          name = "lint-workflows";
+          runtimeInputs = [ lintPkgs.actionlint lintPkgs.shellcheck lintPkgs.zizmor ];
+          text = ''
+            config=()
+            if [[ -f .github/actionlint.yaml ]]; then
+              config=(-config-file .github/actionlint.yaml)
+            fi
+            actionlint "''${config[@]}" .github/workflows/*.yml
+            zizmor --offline --min-severity medium --min-confidence medium .github/workflows
+          '';
+        };
+
+        workflowsSrc = pkgs.lib.fileset.toSource {
+          root = ./.;
+          fileset = ./.github;
+        };
+
         # ldap-scim-bridge currently can only be built with GHC 9.6. However,
         # providing environments with other GHC versions is a first step to fix
         # the issues...
         ghcVersions = [ "ghc92" "ghc94" "ghc96" "ghc98" "ghc910" ];
 
-        haskellPackagesFor = ghc_version: (pkgs.haskell.packages.${ghc_version}).override haskellPackagesOverlay;
+        haskellPackagesFor = ghc_version: pkgs.haskell.packages.${ghc_version}.override haskellPackagesOverlay;
         additionalDevShells = builtins.listToAttrs (map
           (ghc_version: {
             name = ghc_version;
@@ -101,12 +124,15 @@
       {
         packages = {
           default = haskellPackages.ldap-scim-bridge;
-          bomDependencies = bomDependencies;
+          inherit bomDependencies;
         };
 
         # Development shell with required dependencies
         devShells = {
           default = additionalDevShells.ghc96;
+          ci = lintPkgs.mkShell {
+            packages = [ lint-workflows lintPkgs.actionlint lintPkgs.shellcheck lintPkgs.zizmor ];
+          };
         } // additionalDevShells;
 
         formatter = treefmt-command;
@@ -119,6 +145,17 @@
               }
               ''
                 statix-check > $out
+              '';
+          workflows =
+            pkgs.runCommand "workflows-lint"
+              {
+                nativeBuildInputs = [ lint-workflows ];
+              }
+              ''
+                export HOME=$TMPDIR
+                cd ${workflowsSrc}
+                lint-workflows
+                touch $out
               '';
         };
 

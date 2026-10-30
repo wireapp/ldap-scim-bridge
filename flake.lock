@@ -51,6 +51,21 @@
         "type": "indirect"
       }
     },
+    "nixpkgs-lint": {
+      "locked": {
+        "lastModified": 1793294725,
+        "narHash": "sha256-loLMnbbS4KhmG2ln9EY6f0YMNCA273Yx02oWYQ9IMeE=",
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "6f06d204d8f2d8761d9da78778745974a3216381",
+        "type": "github"
+      },
+      "original": {
+        "id": "nixpkgs",
+        "ref": "nixos-26.05",
+        "type": "indirect"
+      }
+    },
     "nixpkgs_2": {
       "locked": {
         "lastModified": 1738172511,
@@ -70,6 +85,7 @@
       "inputs": {
         "flake-utils": "flake-utils",
         "nixpkgs": "nixpkgs",
+        "nixpkgs-lint": "nixpkgs-lint",
         "tom-bombadil": "tom-bombadil"
       }
     },
@@ -109,16 +125,15 @@
         "nixpkgs": "nixpkgs_2"
       },
       "locked": {
-        "lastModified": 1738738687,
-        "narHash": "sha256-iGKP+2je0CohjnkzUuqhOVPtQ/hphG63G3rygDl4z50=",
+        "lastModified": 1739181719,
+        "narHash": "sha256-W4g0e9u5CagGY8qqsHIZbP28iVkvvmz+hCkNz3b5GkE=",
         "owner": "wireapp",
         "repo": "tom-bombadil",
-        "rev": "b85d21b8340db6954bfb4cb7c78e00e4d608afad",
+        "rev": "53842ffb11e8d357b7d7bdf21b800c71a414ed06",
         "type": "github"
       },
       "original": {
         "owner": "wireapp",
-        "ref": "sventennie/import-bombon",
         "repo": "tom-bombadil",
         "type": "github"
       }
