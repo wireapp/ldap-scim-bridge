@@ -5,15 +5,16 @@ name: Workflows lint
 # and zizmor (security audit: template injection, credential persistence,
 # permissions, unpinned actions).
 #
-# Both tools are pinned by content, not by tag: actionlint by the sha256 of
-# its release archive, zizmor by the wheel hashes in
-# .github/lint/zizmor-requirements.txt.
+# Both tools come from the nixpkgs-lint input of flake.nix, locked by
+# flake.lock. Locally: `nix develop .#ci --command lint-workflows`, or
+# `nix flake check`, which runs the same checks.
 
 on:
   pull_request:
     paths:
       - ".github/workflows/**"
-      - ".github/lint/**"
+      - "flake.nix"
+      - "flake.lock"
       - "bin/**"
   workflow_dispatch:
 
@@ -37,40 +38,13 @@ jobs:
         with:
           persist-credentials: false
 
-      # The archive the actionlint release page publishes, checked against the
-      # sha256 from its actionlint_<version>_checksums.txt. To upgrade, change
-      # the version and the checksum together.
-      - name: Install actionlint
-        env:
-          ACTIONLINT_VERSION: 1.7.12
-          ACTIONLINT_SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
-        run: |
-          set -euo pipefail
-          archive="actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
-          curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 --retry 3 \
-            -o "${RUNNER_TEMP}/${archive}" \
-            "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/${archive}"
-          echo "${ACTIONLINT_SHA256}  ${RUNNER_TEMP}/${archive}" | sha256sum --check --strict
-          mkdir -p "${RUNNER_TEMP}/actionlint"
-          tar -xzf "${RUNNER_TEMP}/${archive}" -C "${RUNNER_TEMP}/actionlint" actionlint
-          echo "${RUNNER_TEMP}/actionlint" >> "$GITHUB_PATH"
+      - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
 
-      # shellcheck is on the runner image; actionlint runs it on every `run:`
-      # block when it finds it on PATH.
       - name: actionlint
         run: |
           set -euo pipefail
-          actionlint -version
-          shellcheck --version | head -n 2
-          actionlint -color
-
-      - name: Install zizmor
-        run: |
-          set -euo pipefail
-          python3 -m venv "${RUNNER_TEMP}/zizmor"
-          "${RUNNER_TEMP}/zizmor/bin/pip" install --quiet --disable-pip-version-check \
-            --require-hashes --no-deps -r .github/lint/zizmor-requirements.txt
-          echo "${RUNNER_TEMP}/zizmor/bin" >> "$GITHUB_PATH"
+          nix develop .#ci --command actionlint -version
+          nix develop .#ci --command actionlint -color
 
       # --offline: no GitHub queries (known-vulnerable actions, impostor
       # commits), so no token. Findings of medium severity and confidence or
@@ -78,7 +52,7 @@ jobs:
       - name: zizmor
         run: |
           set -euo pipefail
-          zizmor --version
-          zizmor --offline --format github --min-severity medium --min-confidence medium .github/workflows
+          nix develop .#ci --command zizmor --version
+          nix develop .#ci --command zizmor --offline --format github --min-severity medium --min-confidence medium .github/workflows
           echo "--- every finding, for information (does not fail the job):"
-          zizmor --offline --format plain --no-exit-codes .github/workflows
+          nix develop .#ci --command zizmor --offline --format plain --no-exit-codes .github/workflows

@@ -230,10 +230,17 @@ run:
 nix fmt
 ```
 
-To validate the Nix code itself:
+To validate the Nix code itself and lint the GitHub workflows (actionlint and
+zizmor, as in CI):
 
 ```sh
 nix flake check
+```
+
+The workflow linters alone, from the `ci` shell:
+
+```sh
+nix develop .#ci --command lint-workflows
 ```
 
 To update the Nix dependencies:
