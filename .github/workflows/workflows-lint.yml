@@ -12,6 +12,7 @@ name: Workflows lint
 on:
   pull_request:
     paths:
+      - ".github/actionlint.yaml"
       - ".github/workflows/**"
       - "flake.nix"
       - "flake.lock"
@@ -27,7 +28,7 @@ concurrency:
 jobs:
   lint:
     name: actionlint and zizmor
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     permissions:
       contents: read
