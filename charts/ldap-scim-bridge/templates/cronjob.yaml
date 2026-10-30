@@ -1,0 +1,45 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ .Release.Name }}
+  labels:
+    app: ldap-scim-bridge
+    chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
+spec:
+  concurrencyPolicy: Forbid
+  schedule: {{ .Values.schedule | quote }}
+  jobTemplate:
+    metadata:
+      labels:
+        app: ldap-scim-bridge
+        release: {{ .Release.Name }}
+      annotations:
+        # Checksum of the config Secret: a config change shows up in the job template on `helm upgrade`
+        checksum/secret: {{ include (print .Template.BasePath "/secret.yaml") . | sha256sum }}
+    spec:
+      backoffLimit: 0
+      template:
+        spec:
+          restartPolicy: Never
+          {{- with .Values.image.pullSecrets }}
+          imagePullSecrets:
+            {{- range . }}
+            - name: {{ . | quote }}
+            {{- end }}
+          {{- end }}
+          volumes:
+            - name: "ldap-scim-bridge-config"
+              secret:
+                secretName: {{ .Values.existingSecret | default .Release.Name }}
+          containers:
+            - name: ldap-scim-bridge
+              image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+              imagePullPolicy: {{ default "" .Values.imagePullPolicy | quote }}
+              args: ["ldap-scim-bridge", "/etc/ldap-scim-bridge/config.yaml"]
+              volumeMounts:
+              - name: "ldap-scim-bridge-config"
+                mountPath: "/etc/ldap-scim-bridge/"
+              resources:
+{{ toYaml .Values.resources | indent 16 }}

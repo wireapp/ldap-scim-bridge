@@ -1,0 +1,10 @@
+apiVersion: v2
+description: ldap-scim-bridge - Sync LDAP via Wire Server SCIM API
+name: ldap-scim-bridge
+type: application
+# CronJob batch/v1 is GA since Kubernetes 1.21.
+kubeVersion: ">=1.21.0-0"
+# Placeholders: CI stamps version == appVersion == image tag at package time
+# (ADR-0018). Never bump them by hand.
+version: 0.0.0-dev
+appVersion: "0.0.0-dev"

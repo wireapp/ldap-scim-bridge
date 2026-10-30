@@ -1,0 +1,79 @@
+# ldap-scim-bridge runs as a CronJob: every `schedule`, a pod reads users from
+# LDAP and pushes them to a SCIM peer (Wire's spar), then exits.
+#
+# The bridge reads no environment variables: its whole configuration is the
+# `config` block below, rendered as /etc/ldap-scim-bridge/config.yaml (see
+# docs/configuration.md in https://github.com/wireapp/ldap-scim-bridge).
+
+image:
+  repository: quay.io/wire/ldap-scim-bridge
+  # Defaults to the chart appVersion, which CI sets to the image tag.
+  tag: ""
+  # Names of existing image pull secrets in the release namespace. Empty: no
+  # pull secret (public registry, or an air-gapped mirror without auth).
+  pullSecrets: []
+
+# Container imagePullPolicy. Empty: the Kubernetes default (IfNotPresent for a
+# version tag).
+imagePullPolicy: ""
+
+resources:
+  requests:
+    memory: "256Mi"
+    cpu: "100m"
+  limits:
+    # based on observation - 20211004 - JEL
+    memory: "1750Mi"
+    cpu: "500m"
+
+# Cron schedule of the sync, in the cluster's time zone. Runs never overlap
+# (concurrencyPolicy: Forbid).
+# https://kubernetes.io/docs/concepts/workloads/controllers/cron-jobs/#schedule-syntax
+schedule: "*/5 * * * *"
+
+# Name of an existing Secret holding the whole bridge configuration under the
+# key `config.yaml`. When set, `config` is ignored and the chart renders no
+# Secret of its own.
+existingSecret: ""
+
+# Bridge configuration, rendered verbatim into a Secret (it holds the LDAP bind
+# password and the SCIM token). Required unless `existingSecret` is set: the
+# render fails when a key marked (required) is missing. Reference, with the
+# values of the openldap test chart:
+#
+# config:
+#   logLevel: "Info"                  # (required) Trace, Debug, Info, Warn, Error or Fatal
+#   ldapSource:
+#     tls: true                       # (required) use TLS to reach LDAP
+#     host: "openldap"                # (required)
+#     port: 389                       # (required)
+#     dn: "cn=admin,dc=nodomain"      # (required) bind DN
+#     password: "admin"               # (required) bind password
+#     codec: "utf8"                   # (required) utf8 or latin1
+#     search:
+#       base: "ou=People,dc=nodomain" # (required)
+#       objectClass: "account"        # (required)
+#       # Any other key is an extra attribute filter, e.g.:
+#       # memberOf: "cn=wire,ou=Groups,dc=nodomain"
+#     # Optional: entries carrying this attribute value are deleted in SCIM.
+#     deleteOnAttribute:
+#       key: "deleted"
+#       value: "true"
+#     # Optional: entries found under this search are deleted in SCIM.
+#     deleteFromDirectory:
+#       base: "ou=DeletedPeople,dc=nodomain"
+#       objectClass: "account"
+#   scimTarget:
+#     tls: true                       # (required) use TLS to reach the SCIM peer
+#     host: "spar"                    # (required)
+#     port: 8080                      # (required)
+#     path: "/scim/v2"                # (required) path of the SCIM API
+#     token: "Bearer <token>"         # (required) SCIM token from team settings
+#   # SCIM attribute: LDAP attribute.
+#   mapping:
+#     userName: "uidNumber"           # (required)
+#     externalId: "uid"               # (required)
+#     displayName: "displayName"      # optional
+#     email: "email"                  # optional
+#     roles: "wireRole"               # optional
+config: {}
