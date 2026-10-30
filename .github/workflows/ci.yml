@@ -82,6 +82,12 @@ jobs:
           helm template lsb charts/ldap-scim-bridge -f ci/helm/values-test.yaml > /dev/null
           helm template lsb charts/ldap-scim-bridge --set existingSecret=lsb-config > /dev/null
 
+      - name: openldap test chart
+        run: |
+          set -euo pipefail
+          helm lint --strict examples/openldap
+          helm template openldap examples/openldap > /dev/null
+
       - name: helm template fails without the required values
         run: |
           set -euo pipefail
