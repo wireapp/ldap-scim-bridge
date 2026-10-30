@@ -6,12 +6,9 @@ reads users from LDAP, pushes them to Wire's SCIM API, then exits. Runs never
 overlap.
 
 The chart version, its `appVersion` and the image tag are the same build
-version (`0.12.0`, `0.12.0-rc.1`, …). Until 5.x it was published from
-wire-server under the wire-server version.
-
-**Always pin `--version`.** The 5.x charts published by wire-server stay in
-the same repositories under the same name, and sort above 0.12.0: without
-`--version`, Helm picks the highest version, an old wire-server one.
+version (`6.0.0`, `6.0.0-rc.1`, …). Until 5.x it was published from
+wire-server under the wire-server version; the bridge versions start at 6.0.0,
+above them.
 
 ## Install
 

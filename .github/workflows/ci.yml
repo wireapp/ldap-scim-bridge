@@ -91,6 +91,64 @@ jobs:
           fi
           grep 'is required (or set existingSecret)' "${RUNNER_TEMP}/render.err"
 
+  # The release files of publication/ (ADR-0020 section 2) on every pull
+  # request: the three files are there, the declaration is valid against the
+  # wire-rm-actions schema for the version of the .cabal file (the base version
+  # of the next release), the compatibility file is valid, and its Kubernetes
+  # range matches the kubeVersion of the chart.
+  release-files:
+    name: Release files
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Check the files and read the version
+        id: files
+        run: |
+          set -euo pipefail
+          for f in publication/release-note.md publication/declaration.json publication/compatibility.yaml; do
+            [[ -s "$f" ]] || { echo "::error::$f is missing or empty"; exit 1; }
+          done
+          cabal_version=$(sed -n 's/^version:[[:space:]]*//p' ldap-scim-bridge.cabal)
+          declared=$(jq -r '.version // ""' publication/declaration.json)
+          if [[ "$declared" != "$cabal_version" ]]; then
+            echo "::error::publication/declaration.json version '${declared}' differs from the .cabal version '${cabal_version}'"
+            exit 1
+          fi
+          echo "version=${cabal_version}" >> "$GITHUB_OUTPUT"
+
+      - name: Check the compatibility file
+        uses: wireapp/wire-rm-actions/compatibility@813f008b900b1ad3284502f97cac343d80b1836b # v0.1.0
+        with:
+          file: publication/compatibility.yaml
+
+      - name: Check the release declaration
+        uses: wireapp/wire-rm-actions/release-declaration@813f008b900b1ad3284502f97cac343d80b1836b # v0.1.0
+        with:
+          file: publication/declaration.json
+          component: ldap-scim-bridge
+          version: ${{ steps.files.outputs.version }}
+
+      # Chart.yaml says ">=1.21.0-0" (the -0 admits pre-release cluster
+      # versions), compatibility.yaml ">=1.21.0": the same floor.
+      - name: Check the Kubernetes range against the chart
+        run: |
+          set -euo pipefail
+          chart=$(yq -r '.kubeVersion' charts/ldap-scim-bridge/Chart.yaml)
+          declared=$(yq -r '.dependsOn[] | select(.platform == "kubernetes") | .range' publication/compatibility.yaml)
+          if [[ "${chart%-0}" != "$declared" ]]; then
+            echo "::error::compatibility.yaml kubernetes range '${declared}' does not match the chart kubeVersion '${chart}'"
+            exit 1
+          fi
+          echo "kubernetes ${declared}: chart and compatibility.yaml agree"
+
   build-ghc-matrix:
     name: Haskell build with several GHC versions (some are expected to fail)
     if: contains(github.event.pull_request.labels.*.name, 'ghc-matrix')

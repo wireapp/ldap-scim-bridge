@@ -1,0 +1,118 @@
+{
+  "schemaVersion": "wire.component-release/v1alpha2",
+  "component": "ldap-scim-bridge",
+  "version": "6.0.0",
+  "summary": "The bridge is unchanged since 0.10.4; its Helm chart moves from wire-server to this repository, follows the bridge version and checks its configuration at render time.",
+  "upgrade_from": ">=0.10.0",
+  "changes": [
+    {
+      "kind": "changed",
+      "description": "The chart is published at oci://quay.io/wire/charts/stable/ldap-scim-bridge and its version follows the bridge (6.0.0) instead of wire-server (5.x). Install from the new OCI repository with --version 6.0.0.",
+      "breaking": true,
+      "links": [
+        "https://github.com/wireapp/ldap-scim-bridge/commit/10b03ba5530509763949b0f1fa5241a52341701d"
+      ]
+    },
+    {
+      "kind": "removed",
+      "description": "The chart requires Kubernetes 1.21 or later: the batch/v1beta1 CronJob fallback and the kubeVersionOverride value are gone. Upgrade the cluster to Kubernetes 1.21 or later before upgrading the chart, and drop kubeVersionOverride from your values.",
+      "breaking": true,
+      "links": [
+        "https://github.com/wireapp/ldap-scim-bridge/commit/8c8848d2d281b930ad998f0ebc63672154290a17"
+      ]
+    },
+    {
+      "kind": "changed",
+      "description": "The render fails unless config holds the whole bridge configuration or existingSecret names a Secret with a config.yaml key; the old chart rendered an empty configuration. Set config (LDAP and SCIM endpoints, credentials, mapping) or existingSecret before running helm upgrade.",
+      "breaking": true,
+      "links": [
+        "https://github.com/wireapp/ldap-scim-bridge/commit/593ffeb8fc0ae3fbbaae23ebb0815a7a52dc81d6"
+      ]
+    },
+    {
+      "kind": "changed",
+      "description": "The render also fails when tls, codec, search.objectClass, scimTarget.path or logLevel is missing from config. Set every key docs/configuration.md lists as required.",
+      "breaking": true,
+      "links": [
+        "https://github.com/wireapp/ldap-scim-bridge/commit/1b9b0c563a245adf3df24fb3d88f2cc043d2e2bf"
+      ]
+    },
+    {
+      "kind": "added",
+      "description": "existingSecret mounts an operator-managed configuration (a Secret with a config.yaml key) instead of Helm values.",
+      "breaking": false,
+      "links": [
+        "https://github.com/wireapp/ldap-scim-bridge/commit/593ffeb8fc0ae3fbbaae23ebb0815a7a52dc81d6"
+      ]
+    },
+    {
+      "kind": "added",
+      "description": "Optional image pull secrets (image.pullSecrets) for private registries and air-gapped mirrors; none by default.",
+      "breaking": false,
+      "links": [
+        "https://github.com/wireapp/ldap-scim-bridge/commit/c0108b2abb219c5ab7620cce9bf5c4794c44cd2c"
+      ]
+    },
+    {
+      "kind": "changed",
+      "description": "The image tag defaults to the chart appVersion; remove a pinned image.tag 0.10.4 from your values.",
+      "breaking": false,
+      "links": [
+        "https://github.com/wireapp/ldap-scim-bridge/commit/c32133783fde93584f4cb9b8d8373aaf78bea12d"
+      ]
+    }
+  ],
+  "migrations": [
+    {
+      "kind": "manual",
+      "automatic": false,
+      "description": "Switch the release to the chart from oci://quay.io/wire/charts/stable/ldap-scim-bridge with helm upgrade, keeping the release name; reapply the Active Directory CA patch afterwards when you use one.",
+      "downtime": "none",
+      "reversible": true
+    }
+  ],
+  "configuration": [
+    {
+      "key": "config",
+      "change": "changed",
+      "required": true,
+      "default": null,
+      "description": "Now required unless existingSecret is set; the render checks every key the bridge parser needs."
+    },
+    {
+      "key": "existingSecret",
+      "change": "added",
+      "required": false,
+      "default": "",
+      "description": "Name of a Secret holding config.yaml; replaces config when set."
+    },
+    {
+      "key": "image.tag",
+      "change": "changed",
+      "required": false,
+      "default": "",
+      "description": "Was 0.10.4; empty now means the chart appVersion. Remove a pinned 0.10.4 from your values."
+    },
+    {
+      "key": "image.pullSecrets",
+      "change": "added",
+      "required": false,
+      "default": null,
+      "description": "Existing image pull Secrets; none by default."
+    },
+    {
+      "key": "imagePullPolicy",
+      "change": "changed",
+      "required": false,
+      "default": "",
+      "description": "Already read by the template, now declared and documented in values.yaml; no action needed."
+    },
+    {
+      "key": "kubeVersionOverride",
+      "change": "removed",
+      "required": false,
+      "default": null,
+      "description": "Undeclared value used for the batch/v1beta1 fallback; remove it from your values."
+    }
+  ]
+}

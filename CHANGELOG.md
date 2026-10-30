@@ -1,16 +1,41 @@
 # Changelog
 
-`ldap-scim-bridge` uses [PVP][1]-compatible versioning.
-The changelog is available [on GitHub][2].
+Since 6.0.0, `ldap-scim-bridge` follows [Semantic Versioning][1] as the
+Wire build standard defines it: GA `X.Y.Z`, pre-releases
+`X.Y.Z-<alpha|beta|rc>.N`, git tags `vX.Y.Z`. The image, the Helm chart and its
+`appVersion` all carry the same version. Earlier versions used [PVP][3]. The
+per-commit changes are in the [GitHub releases][2].
+
+The cabal file holds the base version of the next release (`6.0.0` for
+`6.0.0-rc.1` too): cabal versions cannot carry a pre-release suffix.
+
+## 6.0.0
+
+The bridge itself is unchanged since 0.10.4; this release changes how it is
+built, versioned and deployed. See
+[publication/release-note.md](publication/release-note.md).
+
+- Switch from PVP to Semantic Versioning.
+- Move the Helm chart from wire-server to `charts/ldap-scim-bridge`, published
+  as `oci://quay.io/wire/charts/stable/ldap-scim-bridge` with the bridge
+  version instead of the wire-server version. The bridge goes from 0.10.4
+  to 6.0.0, above the 5.x charts wire-server published under the same name.
+- Chart: `apiVersion: v2`; the image tag defaults to the chart `appVersion`;
+  the bridge configuration is required, or `existingSecret` names a Secret
+  holding it; optional image pull secrets; Kubernetes 1.21 or later.
+- Document the configuration file in `docs/configuration.md`.
+- Build dev versions on every merge and release from GitHub Actions with the
+  Wire release workflows; pushing a tag no longer publishes an image.
 
 ## 0.11.0
 
-No image or Hackage package was published under this number: these changes
-shipped in the `0.10.1` to `0.10.4` images. The `v0.11.0` tag marks this commit
-as the base of the SemVer versions that follow.
+These changes shipped in the `0.10.1` to `0.10.4` images. No image, chart or
+Hackage package was published as `0.11.0`. The annotated tag `v5.0.0` marks
+the same commit as `v0.11.0`: it is the base of the SemVer versions, so that
+6.0.0 sorts above the 5.x charts published from wire-server.
 
-  - Migrate project setup and CI to use Nix flake
-  - Remove old `Dockerfile` (build docker image with Nix)
+- Migrate project setup and CI to use Nix flake
+- Remove old `Dockerfile` (build docker image with Nix)
 
 ## 0.10
 
@@ -62,5 +87,6 @@ as the base of the SemVer versions that follow.
 
 * Initially created.
 
-[1]: https://pvp.haskell.org
+[1]: https://semver.org
 [2]: https://github.com/wireapp/ldap-scim-bridge/releases
+[3]: https://pvp.haskell.org

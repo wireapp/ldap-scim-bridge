@@ -130,8 +130,10 @@
         # Development shell with required dependencies
         devShells = {
           default = additionalDevShells.ghc96;
+          # The tools of the GitHub workflows: the linters, and skopeo and
+          # crane for the image pushes (`nix develop .#ci --command ...`).
           ci = lintPkgs.mkShell {
-            packages = [ lint-workflows lintPkgs.actionlint lintPkgs.shellcheck lintPkgs.zizmor ];
+            packages = [ lint-workflows lintPkgs.actionlint lintPkgs.shellcheck lintPkgs.zizmor lintPkgs.skopeo lintPkgs.crane ];
           };
         } // additionalDevShells;
 
@@ -159,20 +161,46 @@
               '';
         };
 
-        packages.dockerImage = pkgs.dockerTools.buildImage {
-          name = "ldap-scim-bridge";
-          # Don't use `latest` as tag: The image could easily be confused with
-          # `latest` from the image repo.
-          tag = "build";
-          copyToRoot = pkgs.buildEnv {
-            name = "image-root";
-            paths = [ (pkgs.haskell.lib.justStaticExecutables haskellPackages.ldap-scim-bridge) ];
-            pathsToLink = [ "/bin" ];
+        packages.dockerImage =
+          let
+            # CI passes the build version and, for dev builds, the Quay
+            # expiration (`nix build --impure`). A pure build gets the
+            # placeholders: `0.0.0-dev` and no expiration.
+            imageVersion =
+              let v = builtins.getEnv "LSB_IMAGE_VERSION"; in if v == "" then "0.0.0-dev" else v;
+            expiresAfter = builtins.getEnv "LSB_IMAGE_EXPIRES_AFTER";
+            # The commit date, not the build time: same commit, same labels.
+            d = self.lastModifiedDate or "19700101000000";
+            created = "${builtins.substring 0 4 d}-${builtins.substring 4 2 d}-${builtins.substring 6 2 d}T${builtins.substring 8 2 d}:${builtins.substring 10 2 d}:${builtins.substring 12 2 d}Z";
+          in
+          pkgs.dockerTools.buildImage {
+            name = "ldap-scim-bridge";
+            # Don't use `latest` as tag: The image could easily be confused with
+            # `latest` from the image repo.
+            tag = "build";
+            copyToRoot = pkgs.buildEnv {
+              name = "image-root";
+              paths = [ (pkgs.haskell.lib.justStaticExecutables haskellPackages.ldap-scim-bridge) ];
+              pathsToLink = [ "/bin" ];
+            };
+            config = {
+              Cmd = [ "/bin/ldap-scim-bridge" ];
+              # OCI labels of ADR-0020 rule 8.
+              Labels = {
+                "org.opencontainers.image.title" = "ldap-scim-bridge";
+                "org.opencontainers.image.description" = "Sync LDAP users to Wire through its SCIM API";
+                "org.opencontainers.image.source" = "https://github.com/wireapp/ldap-scim-bridge";
+                "org.opencontainers.image.url" = "https://github.com/wireapp/ldap-scim-bridge";
+                "org.opencontainers.image.vendor" = "Wire GmbH";
+                "org.opencontainers.image.licenses" = "AGPL-3.0-or-later";
+                "org.opencontainers.image.version" = imageVersion;
+                "org.opencontainers.image.revision" = self.rev or self.dirtyRev or "unknown";
+                "org.opencontainers.image.created" = created;
+              } // pkgs.lib.optionalAttrs (expiresAfter != "") {
+                "quay.expires-after" = expiresAfter;
+              };
+            };
           };
-          config = {
-            Cmd = [ "/bin/ldap-scim-bridge" ];
-          };
-        };
       }
     );
 }
