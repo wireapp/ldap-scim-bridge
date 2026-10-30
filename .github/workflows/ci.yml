@@ -23,7 +23,7 @@ concurrency:
 jobs:
   lint:
     name: General linting steps
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     permissions:
       contents: read
     steps:
@@ -40,7 +40,7 @@ jobs:
 
   build:
     name: Haskell build (GHC 9.6 - default env)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     permissions:
       contents: read
 
@@ -61,7 +61,7 @@ jobs:
 
   helm:
     name: Helm chart
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     permissions:
       contents: read
 
@@ -82,6 +82,12 @@ jobs:
           helm template lsb charts/ldap-scim-bridge -f ci/helm/values-test.yaml > /dev/null
           helm template lsb charts/ldap-scim-bridge --set existingSecret=lsb-config > /dev/null
 
+      - name: openldap test chart
+        run: |
+          set -euo pipefail
+          helm lint --strict examples/openldap
+          helm template openldap examples/openldap > /dev/null
+
       - name: helm template fails without the required values
         run: |
           set -euo pipefail
@@ -99,7 +105,7 @@ jobs:
   release-files:
     name: Release files
     if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     permissions:
       contents: read
@@ -152,7 +158,7 @@ jobs:
   build-ghc-matrix:
     name: Haskell build with several GHC versions (some are expected to fail)
     if: contains(github.event.pull_request.labels.*.name, 'ghc-matrix')
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     permissions:
       contents: read
     strategy:

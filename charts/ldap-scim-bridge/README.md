@@ -47,11 +47,12 @@ credentials, `image.pullSecrets`.
 
 ## Test deployment with openldap
 
-The `openldap` chart in wire-server is a test instance with preloaded users;
+The `openldap` chart in [`examples/openldap`](../../examples/openldap) is a test
+instance with preloaded users, not published;
 the reference `config` in `values.yaml` matches it.
 
 ```sh
-helm upgrade --install -n wire openldap <wire-server>/charts/openldap/
+helm upgrade --install -n wire openldap examples/openldap/
 helm upgrade --install -n wire ldap-scim-bridge charts/ldap-scim-bridge -f my-values.yaml
 ```
 

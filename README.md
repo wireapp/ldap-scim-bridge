@@ -76,7 +76,7 @@ docker pull quay.io/wire/ldap-scim-bridge:$IMAGE_TAG
 ```
 
 Usually, `IMAGE_TAG` should be the latest release name without the `v`-prefix.
-E.g. for `v0.10.3` the `IMAGE_TAG` is `0.10.3`.
+E.g. for `v6.0.0` the `IMAGE_TAG` is `6.0.0`.
 
 You need to create a config file that contains your setup.  If in doubt, you can start with [this example](./examples/wire-server/conf1.yaml), or [this one](./examples/wire-server/conf2.yaml).  Name the file `config.yaml` and place it into `/config-path`.
 
@@ -101,12 +101,26 @@ docker run -it --network=host \
 
 ### helm
 
-There is a Helm chart to deploy `ldap-scim-bridge` to a Kubernetes cluster:
-https://github.com/wireapp/wire-server/tree/master/charts/ldap-scim-bridge
+The Helm chart in [`charts/ldap-scim-bridge`](./charts/ldap-scim-bridge)
+deploys `ldap-scim-bridge` as a Kubernetes CronJob. Releases are published at
+`oci://quay.io/wire/charts/stable/ldap-scim-bridge`, with the same version as
+the image:
 
-Please refer to its documentation.
+```sh
+helm upgrade --install -n wire ldap-scim-bridge \
+  oci://quay.io/wire/charts/stable/ldap-scim-bridge --version <version> \
+  -f my-values.yaml
+```
+
+See the [chart README](./charts/ldap-scim-bridge/README.md) and
+[docs/configuration.md](./docs/configuration.md). Until 5.x the chart was
+published from wire-server, under the wire-server version.
 
 ## the config file
+
+Every key, with its type and whether it is required, is listed in
+[docs/configuration.md](./docs/configuration.md). The bridge reads no
+environment variables.
 
 The config file consists of three main sections:
 
@@ -254,17 +268,44 @@ Tag your PR with the label `ghc-matrix` to build this package with many
 different GHC versions. Most are unfortunately - shame on us! - expected to
 fail.
 
-## cutting a new release
+### Commit messages
 
-- Make sure master is up to date
-- `git tag v0.*`
-- `git push --tags`
+Commit subjects follow [Conventional Commits](https://www.conventionalcommits.org):
+`type(scope): summary`, with `feat`, `fix`, `docs`, `ci`, `build`, `chore`,
+`refactor` or `test`. Release changelogs are generated from them, and commits
+without a type are left out. Flag a breaking change with `!` after the type
+**and** `[breaking]` at the end of the subject (`feat(chart)!: summary
+[breaking]`), plus a `BREAKING CHANGE: <what operators must do>` footer, so the
+release changelog and the release manager surface it. Both markers are needed
+until a single Wire-wide convention is agreed.
 
-This will trigger a github workflow that builds and uploads the docker
-images to quay.io.
+## versions and releases
 
-- consider releasing to hackage (`cabal sdist`, then `cabal upload`)
-- bump version in cabal file to upcoming version
+`dev` is the trunk. A `release/X.Y` branch is cut by hand, only for a line that
+gets backports (fix on `dev` first, then backport). Versions follow
+[Semantic Versioning](https://semver.org) (see [CHANGELOG.md](./CHANGELOG.md)),
+and the image, the chart and its `appVersion` always carry the same version.
+`master` is frozen at `7f9749d` (v0.10.4); development happens on `dev`.
+
+- **Dev builds**: every merge on `dev` or `release/*` (and any manual run of
+  the `Dev build` workflow) publishes `quay.io/wire/ldap-scim-bridge:<version>`
+  and `oci://quay.io/wire/charts/dev/ldap-scim-bridge` under a version computed
+  from the last tag, e.g. `6.0.1-20261012093000.gabcdef0`, and declares it to
+  the release managers. These builds expire after 90 days.
+- **Releases** (`X.Y.Z-<alpha|beta|rc>.N`, `X.Y.Z`): nobody pushes tags by hand.
+  1. Merge the release files of [`publication/`](./publication)
+     (`release-note.md`, `declaration.json`, `compatibility.yaml`) and the
+     version in `ldap-scim-bridge.cabal` and `CHANGELOG.md`. The `.cabal` file
+     holds the base version (`6.0.0` for `6.0.0-rc.1` too).
+  2. Run the `Prepare release` workflow (`source_branch`, `type`, `bump`): it
+     checks the CI of the source commit, builds the image, the chart and the
+     SBOM once and opens a draft GitHub release.
+  3. A release manager approves the `release-publication` environment on that
+     run: `Publish release` promotes those exact artifacts by digest, publishes
+     the release (which creates the `vX.Y.Z` tag), declares it to the release
+     managers, uploads the SBOM of a GA to Dependency-Track and pushes the chart
+     to the S3 repository wire-builds reads (interim).
+- Hackage is not part of the pipeline.
 
 ## future work
 

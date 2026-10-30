@@ -1,0 +1,398 @@
+name: Publish release
+
+# Only meaningful on the manual recovery path: when called from prepare-release.yml the
+# caller's run title applies.
+run-name: Publish v${{ inputs.version }} (by @${{ github.actor }})
+
+# Publication step of a release (ADR-0020, ADR-0021). No build: it verifies the candidate
+# prepared by prepare-release.yml against its release manifest, promotes (never rebuilds)
+# the exact image by digest and the exact chart package, completes the manifest with the
+# publication facts, and publishes the draft GitHub Release LAST, which creates the tag
+# v<version>. Every destination is idempotent: already published with the same content is a
+# no-op, already published with another content is a hard failure.
+#
+# Gated on the approval of the `release-publication` environment on every path.
+#
+# After the publication: the declaration to the release managers, the SBOM upload to
+# Dependency-Track (GA only) and, as an interim deviation until wire-builds reads the OCI
+# charts, the chart pushed to the S3 repository wire-builds reads (charts-develop for a
+# pre-release, charts for a GA). None of them can hold the release back, which is published
+# by then; a failed S3 push still fails the job, the others only warn.
+#
+# `workflow_dispatch` is the manual recovery path for a pending or partially published
+# candidate: it resolves the draft by version.
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: 'Version to publish, as computed by prepare-release (without v)'
+        type: string
+        required: true
+      release_id:
+        description: 'Numeric id of the draft GitHub Release created by prepare-release'
+        type: string
+        required: true
+    secrets:
+      # Declared explicitly, never `secrets: inherit`: publication receives exactly these.
+      AWS_ACCESS_KEY_ID:
+        description: 'Pushes the chart package to the S3 chart repository (interim)'
+        required: false
+      AWS_SECRET_ACCESS_KEY:
+        description: 'Pushes the chart package to the S3 chart repository (interim)'
+        required: false
+      AWS_REGION:
+        description: 'Region of the S3 chart repository'
+        required: false
+      DEPENDENCY_TRACK_API_KEY:
+        description: 'Uploads the SBOM of a GA; without it the upload only warns'
+        required: false
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to publish (X.Y.Z or X.Y.Z-<channel>.N): recovery path, resolves the draft by tag_name'
+        type: string
+        required: true
+
+permissions: {}
+
+concurrency:
+  group: publish-release-${{ inputs.version }}
+  cancel-in-progress: false
+
+env:
+  HELM_VERSION: v3.22.0
+
+jobs:
+  publish:
+    name: Publish
+    # PREREQUISITE: the `release-publication` environment exists with required reviewers
+    # (wireapp/release-managers). A referenced environment without protection rules would
+    # run at once and publish with no human approval at all.
+    environment:
+      name: release-publication
+      url: ${{ github.server_url }}/${{ github.repository }}/releases/tag/v${{ inputs.version }}
+    runs-on: ubuntu-26.04
+    timeout-minutes: 30
+    permissions:
+      contents: write   # publish the release (creates the tag), replace the manifest asset
+      id-token: write   # OIDC token of the run: Quay and the release managers
+
+    steps:
+      # Free-text on the recovery path: validated before it builds a tag or an API path.
+      - name: Validate inputs
+        uses: wireapp/wire-rm-actions/release-inputs@813f008b900b1ad3284502f97cac343d80b1836b # v0.1.0
+        with:
+          mode: publish
+          version: ${{ inputs.version }}
+          release-id: ${{ inputs.release_id }}
+
+      # By release_id from prepare-release, else (recovery path) the only draft with the tag;
+      # downloads the manifest and every file it names (chart, SBOM, documents).
+      - name: Resolve draft release
+        id: draft
+        uses: wireapp/wire-rm-actions/draft-release@813f008b900b1ad3284502f97cac343d80b1836b # v0.1.0
+        with:
+          mode: resolve
+          version: ${{ inputs.version }}
+          release-id: ${{ inputs.release_id }}
+          download: manifest-files
+          asset-dir: ${{ runner.temp }}/candidate
+
+      # Read with jq only; the content is verified by release-manifest after the checkout.
+      - name: Check the manifest source
+        id: manifest_source
+        env:
+          MANIFEST: ${{ steps.draft.outputs.manifest }}
+        run: |
+          set -euo pipefail
+          source_ref=$(jq -r '.source.ref // empty' "$MANIFEST")
+          if [[ ! "$source_ref" =~ ^(dev|release/[0-9]+\.[0-9]+)$ ]]; then
+            echo "error: manifest source.ref '$source_ref' is not a releasable branch" >&2
+            exit 1
+          fi
+          echo "source_ref=$source_ref" >> "$GITHUB_OUTPUT"
+          echo "Manifest source branch ${source_ref}"
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ steps.manifest_source.outputs.source_ref }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify the candidate assets against the manifest
+        id: manifest
+        uses: wireapp/wire-rm-actions/release-manifest@813f008b900b1ad3284502f97cac343d80b1836b # v0.1.0
+        with:
+          mode: verify
+          manifest: ${{ steps.draft.outputs.manifest }}
+          asset-dir: ${{ steps.draft.outputs.asset-dir }}
+          version: ${{ inputs.version }}
+          source-commit: ${{ steps.draft.outputs.target-commitish }}
+          check-source-branch: true
+
+      - name: SBOM of the candidate
+        id: sbom
+        env:
+          EXTRA_ARTIFACTS: ${{ steps.manifest.outputs.extra-artifacts-json }}
+        run: |
+          set -euo pipefail
+          path=$(jq -r '[.[] | select(.type == "sbom")][0].path // empty' <<<"$EXTRA_ARTIFACTS")
+          if [[ -z "$path" ]]; then
+            echo "error: the manifest names no SBOM" >&2
+            exit 1
+          fi
+          echo "path=$path" >> "$GITHUB_OUTPUT"
+
+      # docker login: crane (promote-image, final verification) reads the docker config;
+      # helm gets the token through publish-chart, which logs out when done.
+      - name: Log in to quay.io with the OIDC token of the run
+        id: quay
+        uses: wireapp/wire-rm-actions/quay-login@813f008b900b1ad3284502f97cac343d80b1836b # v0.1.0
+        with:
+          robot: wire+gha_ldap_scim_bridge
+
+      - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
+
+      # ── Promotion by digest, no rebuild ────────────────────────────────────────
+      # promote-image installs its own crane, checked against a pinned sha256.
+      - name: Promote the image (crane tag by digest)
+        id: image
+        uses: wireapp/wire-rm-actions/promote-image@813f008b900b1ad3284502f97cac343d80b1836b # v0.1.0
+        with:
+          repository: ${{ steps.manifest.outputs.image-repository }}
+          digest: ${{ steps.manifest.outputs.image-digest }}
+          tag: ${{ steps.manifest.outputs.image-tag }}
+
+      # Where the manifest says: dev for a pre-release, stable for a GA (ADR-0020 section 1).
+      - name: Chart channel of the candidate
+        id: channel
+        env:
+          CHART_REPOSITORY: ${{ steps.manifest.outputs.chart-repository }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$CHART_REPOSITORY" =~ ^oci://quay\.io/wire/charts/(dev|stable)/ldap-scim-bridge$ ]]; then
+            echo "error: manifest chart repository '${CHART_REPOSITORY}' is not oci://quay.io/wire/charts/(dev|stable)/ldap-scim-bridge" >&2
+            exit 1
+          fi
+          echo "channel=${BASH_REMATCH[1]}" >> "$GITHUB_OUTPUT"
+          echo "ref=${CHART_REPOSITORY#oci://}" >> "$GITHUB_OUTPUT"
+
+      - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+        with:
+          version: ${{ env.HELM_VERSION }}
+
+      # The exact .tgz of the draft, without repackaging and without any expiration.
+      - name: Publish the chart to its OCI channel
+        id: oci_chart
+        uses: wireapp/wire-rm-actions/publish-chart@813f008b900b1ad3284502f97cac343d80b1836b # v0.1.0
+        with:
+          chart-file: ${{ steps.manifest.outputs.chart-path }}
+          version: ${{ steps.manifest.outputs.version }}
+          registry: quay.io
+          channel: ${{ steps.channel.outputs.channel }}
+          username: ${{ steps.quay.outputs.username }}
+          password: ${{ steps.quay.outputs.token }}
+
+      # crane from the ci devShell of flake.nix.
+      - name: Final verification before publishing
+        env:
+          REPOSITORY: ${{ steps.manifest.outputs.image-repository }}
+          TAG: ${{ steps.manifest.outputs.image-tag }}
+          EXPECTED_DIGEST: ${{ steps.manifest.outputs.image-digest }}
+          CHART_PATH: ${{ steps.manifest.outputs.chart-path }}
+          CHART_SHA256: ${{ steps.manifest.outputs.chart-sha256 }}
+          OCI_DIGEST: ${{ steps.oci_chart.outputs.digest }}
+          OCI_CHART_REF: ${{ steps.channel.outputs.ref }}
+          VERSION: ${{ steps.manifest.outputs.version }}
+        run: |
+          set -euo pipefail
+          final=$(nix develop .#ci --command crane digest "${REPOSITORY}:${TAG}")
+          if [[ "$final" != "$EXPECTED_DIGEST" ]]; then
+            echo "error: ${REPOSITORY}:${TAG} resolves to $final, expected $EXPECTED_DIGEST" >&2
+            exit 1
+          fi
+          actual=$(sha256sum "$CHART_PATH" | awk '{print $1}')
+          if [[ "$actual" != "$CHART_SHA256" ]]; then
+            echo "error: chart package sha256 $actual no longer matches the manifest $CHART_SHA256" >&2
+            exit 1
+          fi
+          chart_digest=$(nix develop .#ci --command crane digest "${OCI_CHART_REF}:${VERSION}")
+          if [[ "$chart_digest" != "$OCI_DIGEST" ]]; then
+            echo "error: ${OCI_CHART_REF}:${VERSION} resolves to $chart_digest, expected $OCI_DIGEST" >&2
+            exit 1
+          fi
+          echo "All release artifacts verified against the release manifest: ready to publish."
+
+      - name: Docker logout
+        if: always()
+        run: docker logout quay.io
+
+      # ── Manifest completed with the publication facts, frozen part untouched ───
+      - name: Published digests
+        id: digests
+        env:
+          VERSION: ${{ steps.manifest.outputs.version }}
+          OCI_DIGEST: ${{ steps.oci_chart.outputs.digest }}
+          OCI_CHART_REF: ${{ steps.channel.outputs.ref }}
+        run: |
+          set -euo pipefail
+          digests=$(jq -cn --arg ref "oci://${OCI_CHART_REF}:${VERSION}" --arg digest "$OCI_DIGEST" '{($ref): $digest}')
+          echo "json=$digests" >> "$GITHUB_OUTPUT"
+
+      - name: Complete the release manifest
+        id: completed
+        uses: wireapp/wire-rm-actions/release-manifest@813f008b900b1ad3284502f97cac343d80b1836b # v0.1.0
+        with:
+          mode: complete
+          manifest: ${{ steps.draft.outputs.manifest }}
+          out: ${{ steps.draft.outputs.asset-dir }}/release-manifest.completed.json
+          run-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          digests-json: ${{ steps.digests.outputs.json }}
+
+      # The completed manifest replaces the frozen one on the draft, and the draft is
+      # published: the tag v<version> is born here, on the draft's target commit. A GA from
+      # dev is Latest, unless a newer GA went out while the approval waited. No release/X.Y
+      # branch is created here (ADR-0022: cut by hand, for an LTS line or a first backport).
+      - name: Publish GitHub Release
+        id: publish_release
+        uses: wireapp/wire-rm-actions/draft-release@813f008b900b1ad3284502f97cac343d80b1836b # v0.1.0
+        with:
+          mode: publish
+          version: ${{ steps.manifest.outputs.version }}
+          release-id: ${{ steps.draft.outputs.id }}
+          expected-commit: ${{ steps.manifest.outputs.source-commit }}
+          replace-assets: release-manifest.json=${{ steps.completed.outputs.manifest }}
+          source-ref: ${{ steps.manifest.outputs.source-ref }}
+          latest-branches: ^dev$
+
+      - name: Summarise the publication
+        env:
+          VERSION: ${{ steps.manifest.outputs.version }}
+          KIND: ${{ steps.manifest.outputs.kind }}
+          REPOSITORY: ${{ steps.manifest.outputs.image-repository }}
+          IMAGE_DIGEST: ${{ steps.image.outputs.digest }}
+          IMAGE_STATUS: ${{ steps.image.outputs.status }}
+          CHART_DIGEST: ${{ steps.oci_chart.outputs.digest }}
+          OCI_CHART_REF: ${{ steps.channel.outputs.ref }}
+          CHART_STATUS: ${{ steps.oci_chart.outputs.status }}
+          MAKE_LATEST: ${{ steps.publish_release.outputs.make-latest }}
+          PUBLISHED_URL: ${{ github.server_url }}/${{ github.repository }}/releases/tag/v${{ steps.manifest.outputs.version }}
+        run: |
+          set -euo pipefail
+          {
+            echo "## Published [\`v${VERSION}\`](${PUBLISHED_URL}) (${KIND}, make_latest=${MAKE_LATEST})"
+            echo
+            echo "| Artifact | Identity | |"
+            echo "| --- | --- | --- |"
+            echo "| \`${REPOSITORY}:${VERSION}\` | \`${IMAGE_DIGEST}\` | ${IMAGE_STATUS} |"
+            echo "| \`oci://${OCI_CHART_REF}:${VERSION}\` | \`${CHART_DIGEST}\` | ${CHART_STATUS} |"
+            echo
+            echo "The tag \`v${VERSION}\` now exists; \`release-manifest.json\` on the release carries the \`publication\` block."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # ── Release manager declaration, never fails the job ───────────────────────
+      - name: Release date
+        id: released_at
+        if: ${{ !cancelled() && steps.publish_release.outcome == 'success' }}
+        run: echo "date=$(date -u +%F)" >> "$GITHUB_OUTPUT"
+
+      # The note sent is release-note.md when the release has one, the release body otherwise.
+      # The commit and the branch go in meta: they are the candidate's (the manifest).
+      - name: Release note and meta for the release managers
+        id: rm_inputs
+        if: ${{ !cancelled() && steps.publish_release.outcome == 'success' }}
+        continue-on-error: true
+        env:
+          COMMIT: ${{ steps.manifest.outputs.source-commit }}
+          BRANCH: ${{ steps.manifest.outputs.source-ref }}
+          BODY_FILE: ${{ steps.draft.outputs.body-file }}
+          CANDIDATE_DIR: ${{ steps.draft.outputs.asset-dir }}
+          NOTE_FILE: ${{ steps.manifest.outputs.note-file }}
+          DECLARATION_FILE_NAME: ${{ steps.manifest.outputs.declaration-file }}
+        run: |
+          set -euo pipefail
+          if [[ -n "$NOTE_FILE" ]]; then
+            description="$(cat "${CANDIDATE_DIR}/${NOTE_FILE}")"
+          else
+            description="$(cat "$BODY_FILE")"
+          fi
+          declaration_file=""
+          if [[ -n "$DECLARATION_FILE_NAME" ]]; then
+            declaration_file="${CANDIDATE_DIR}/${DECLARATION_FILE_NAME}"
+          fi
+          meta="commit=${COMMIT}"$'\n'"branch=${BRANCH}"
+          delimiter="rm_$(openssl rand -hex 16)"
+          {
+            printf 'description<<%s\n%s\n%s\n' "$delimiter" "$description" "$delimiter"
+            printf 'meta<<%s\n%s\n%s\n' "$delimiter" "$meta" "$delimiter"
+            printf 'declaration_file=%s\n' "$declaration_file"
+          } >> "$GITHUB_OUTPUT"
+
+      # Gated on the publication itself: declaring an unpublished release would be worse than
+      # not declaring one. A failed declaration only warns.
+      - name: Declare the release to the release managers
+        if: ${{ !cancelled() && steps.publish_release.outcome == 'success' }}
+        continue-on-error: true
+        uses: wireapp/wire-rm-actions/notify-rm@813f008b900b1ad3284502f97cac343d80b1836b # v0.1.0
+        with:
+          component: ldap-scim-bridge
+          version: ${{ steps.manifest.outputs.version }}
+          kind: ${{ steps.manifest.outputs.kind }}
+          repository: ${{ steps.oci_chart.outputs.repository }}
+          digest: ${{ steps.oci_chart.outputs.digest }}
+          release-url: ${{ github.server_url }}/${{ github.repository }}/releases/tag/v${{ steps.manifest.outputs.version }}
+          released-at: ${{ steps.released_at.outputs.date }}
+          release-note-title: v${{ steps.manifest.outputs.version }}
+          release-note-description: ${{ steps.rm_inputs.outputs.description }}
+          release-declaration-file: ${{ steps.rm_inputs.outputs.declaration_file }}
+          release-manifest-file: ${{ steps.completed.outputs.manifest }}
+          meta: ${{ steps.rm_inputs.outputs.meta }}
+          rm-staging-url: ${{ vars.RM_STAGING_URL }}
+          rm-staging-audience: wire-release-manager-staging
+          rm-prod-url: ${{ vars.RM_PROD_URL }}
+          rm-prod-audience: wire-release-manager-prod
+
+      # ── SBOM to Dependency-Track, GA only, never blocking ──────────────────────
+      # Under the final version, with the uploader of the tom-bombadil revision locked in
+      # flake.lock.
+      - name: Upload the SBOM to Dependency-Track
+        if: ${{ !cancelled() && steps.publish_release.outcome == 'success' && steps.manifest.outputs.kind == 'ga' }}
+        env:
+          DEPENDENCY_TRACK_API_KEY: ${{ secrets.DEPENDENCY_TRACK_API_KEY }}
+          SBOM: ${{ steps.sbom.outputs.path }}
+          VERSION: ${{ steps.manifest.outputs.version }}
+        run: |
+          if [[ -z "$DEPENDENCY_TRACK_API_KEY" ]]; then
+            echo "::warning::DEPENDENCY_TRACK_API_KEY is not set: SBOM not uploaded"
+            echo "> :warning: SBOM not uploaded to Dependency-Track: \`DEPENDENCY_TRACK_API_KEY\` is not set." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          if ! nix run --inputs-from . tom-bombadil#upload-bom -- \
+            --project-name ldap-scim-bridge --project-version "$VERSION" --auto-create --bom-file "$SBOM"; then
+            echo "::warning::the SBOM upload to Dependency-Track failed; upload sbom.json of the release again by hand"
+            echo "> :warning: SBOM upload to Dependency-Track failed; upload \`sbom.json\` of the release by hand." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      # ── Interim S3 chart, after the publication and the declaration ────────────
+      # Read by wire-builds: charts-develop for a pre-release, charts for a GA. Still blocking:
+      # a failure fails the job, but the release is published and declared by then, and a
+      # rerun stops at the resolve (no draft any more): push the chart by hand with
+      # `helm s3 push --relative`, as the action does.
+      - name: Publish the chart to the S3 repository (interim)
+        id: s3_chart
+        uses: wireapp/wire-rm-actions/publish-chart-s3@813f008b900b1ad3284502f97cac343d80b1836b # v0.1.0
+        with:
+          chart-file: ${{ steps.manifest.outputs.chart-path }}
+          s3-repository: ${{ steps.manifest.outputs.kind == 'ga' && 'charts' || 'charts-develop' }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Summarise the S3 chart push
+        env:
+          S3_REPO: ${{ steps.s3_chart.outputs.repository }}
+          S3_STATUS: ${{ steps.s3_chart.outputs.status }}
+        run: |
+          echo "> :package: Chart package in \`${S3_REPO}\`: ${S3_STATUS}." >> "$GITHUB_STEP_SUMMARY"
