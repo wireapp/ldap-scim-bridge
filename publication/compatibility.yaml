@@ -1,0 +1,21 @@
+# What ldap-scim-bridge provides, consumes and depends on (ADR-0020 section 3).
+# The bridge serves no API: it reads LDAP and pushes users to the SCIM v2 API of
+# wire-server (spar). It is declared as a dependency on wire-server until the
+# SCIM API has an id in the interface registry of the release manager.
+providesApis: []
+
+consumesApis: []
+
+dependsOn:
+  - component: wire-server
+    range: ">=5.0.0"
+    class: mandatory
+    reason: >-
+      Provisions users through the SCIM v2 API of spar (/scim/v2), with a team
+      SCIM token.
+  - platform: kubernetes
+    range: ">=1.21.0"
+    class: mandatory
+    reason: Matches kubeVersion in charts/ldap-scim-bridge/Chart.yaml (CronJob batch/v1).
+
+includes: []
