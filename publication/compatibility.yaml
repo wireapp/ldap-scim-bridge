@@ -7,6 +7,12 @@ providesApis: []
 consumesApis: []
 
 dependsOn:
+  - resource: ldap
+    range: "*"
+    class: mandatory
+    reason: >-
+      The customer's directory, read over LDAP or LDAPS with a bind DN; any
+      LDAPv3 server (OpenLDAP, Active Directory).
   - component: wire-server
     range: ">=5.0.0"
     class: mandatory
