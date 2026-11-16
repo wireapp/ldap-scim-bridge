@@ -20,7 +20,7 @@ run-name: Prepare ${{ inputs.type }} from ${{ inputs.source_branch }} (by @${{ g
 # summaries.
 #
 # It never creates the release git tag, writes the final image tag, pushes the chart to its
-# channel or to S3, or commits anything. Publication (promoting these exact artifacts by
+# channel, or commits anything. Publication (promoting these exact artifacts by
 # digest and publishing the draft) is publish-release.yml, called by the `publish` job below
 # and gated on the approval of the `release-publication` environment.
 
@@ -361,11 +361,6 @@ jobs:
             echo "| --- | --- |"
             echo "| Docker image | \`${IMAGE_REPOSITORY}:${TARGET}\` |"
             echo "| Helm chart | \`${CHART_REPOSITORY}:${TARGET}\` |"
-            if [[ "$RELEASE_TYPE" == "ga" ]]; then
-              echo "| Helm chart (S3, interim) | \`charts\` |"
-            else
-              echo "| Helm chart (S3, interim) | \`charts-develop\` |"
-            fi
             echo "| SBOM | \`sbom.json\`, attached below |"
             echo "| Release manifest | \`release-manifest.json\`, attached below |"
             if [[ -n "$DECLARATION_FILE" ]]; then
@@ -458,7 +453,4 @@ jobs:
       release_id: ${{ needs.prepare.outputs.release_id }}
     # Passed explicitly, never `secrets: inherit`: publication receives only what it uses.
     secrets:
-      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-      AWS_REGION: ${{ secrets.AWS_REGION }}
       DEPENDENCY_TRACK_API_KEY: ${{ secrets.DEPENDENCY_TRACK_API_KEY }}

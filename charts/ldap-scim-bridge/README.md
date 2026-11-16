@@ -23,9 +23,8 @@ helm upgrade --install -n wire ldap-scim-bridge \
 Pre-releases (`X.Y.Z-rc.N`, …) and dev builds (which expire after 90 days)
 are under `oci://quay.io/wire/charts/dev/ldap-scim-bridge`.
 
-Until wire-builds reads OCI, releases are also pushed to the S3 Helm
-repositories `https://s3-eu-west-1.amazonaws.com/public.wire.com/charts` (GA)
-and `…/charts-develop` (pre-releases), with the same versions.
+The chart is published to these OCI repositories only, not to the S3 Helm
+repositories (`charts`, `charts-develop`) that carried the wire-server copy.
 
 `my-values.yaml` must provide the bridge configuration under `config` (see
 `values.yaml` for the reference and

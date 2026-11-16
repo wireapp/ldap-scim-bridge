@@ -303,8 +303,7 @@ and the image, the chart and its `appVersion` always carry the same version.
   3. A release manager approves the `release-publication` environment on that
      run: `Publish release` promotes those exact artifacts by digest, publishes
      the release (which creates the `vX.Y.Z` tag), declares it to the release
-     managers, uploads the SBOM of a GA to Dependency-Track and pushes the chart
-     to the S3 repository wire-builds reads (interim).
+     managers and uploads the SBOM of a GA to Dependency-Track.
 - Hackage is not part of the pipeline.
 
 ## future work
