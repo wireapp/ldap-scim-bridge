@@ -6,9 +6,9 @@ what the chart checks before it deploys anything.
 
 - **The chart moved** from wire-server to this repository and is published at
   `oci://quay.io/wire/charts/stable/ldap-scim-bridge` (pre-releases under
-  `oci://quay.io/wire/charts/dev/ldap-scim-bridge`). Until wire-builds reads OCI,
-  it is also pushed to the S3 Helm repositories `charts` (GA) and
-  `charts-develop` (pre-releases). wire-server no longer ships it.
+  `oci://quay.io/wire/charts/dev/ldap-scim-bridge`) only: it is no longer in
+  the S3 Helm repositories `charts` and `charts-develop`. wire-server no longer
+  ships it.
 - **One version for everything:** the chart version, its `appVersion` and the
   image tag are all `6.0.0`. Until now the chart carried the wire-server
   version (5.x) and pinned the image to `0.10.4` in its values.

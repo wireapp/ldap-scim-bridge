@@ -13,11 +13,9 @@ run-name: Publish v${{ inputs.version }} (by @${{ github.actor }})
 #
 # Gated on the approval of the `release-publication` environment on every path.
 #
-# After the publication: the declaration to the release managers, the SBOM upload to
-# Dependency-Track (GA only) and, as an interim deviation until wire-builds reads the OCI
-# charts, the chart pushed to the S3 repository wire-builds reads (charts-develop for a
-# pre-release, charts for a GA). None of them can hold the release back, which is published
-# by then; a failed S3 push still fails the job, the others only warn.
+# After the publication: the declaration to the release managers and the SBOM upload to
+# Dependency-Track (GA only). Neither can hold the release back, which is published by
+# then; both only warn.
 #
 # `workflow_dispatch` is the manual recovery path for a pending or partially published
 # candidate: it resolves the draft by version.
@@ -35,15 +33,6 @@ on:
         required: true
     secrets:
       # Declared explicitly, never `secrets: inherit`: publication receives exactly these.
-      AWS_ACCESS_KEY_ID:
-        description: 'Pushes the chart package to the S3 chart repository (interim)'
-        required: false
-      AWS_SECRET_ACCESS_KEY:
-        description: 'Pushes the chart package to the S3 chart repository (interim)'
-        required: false
-      AWS_REGION:
-        description: 'Region of the S3 chart repository'
-        required: false
       DEPENDENCY_TRACK_API_KEY:
         description: 'Uploads the SBOM of a GA; without it the upload only warns'
         required: false
@@ -374,25 +363,3 @@ jobs:
             echo "::warning::the SBOM upload to Dependency-Track failed; upload sbom.json of the release again by hand"
             echo "> :warning: SBOM upload to Dependency-Track failed; upload \`sbom.json\` of the release by hand." >> "$GITHUB_STEP_SUMMARY"
           fi
-
-      # ── Interim S3 chart, after the publication and the declaration ────────────
-      # Read by wire-builds: charts-develop for a pre-release, charts for a GA. Still blocking:
-      # a failure fails the job, but the release is published and declared by then, and a
-      # rerun stops at the resolve (no draft any more): push the chart by hand with
-      # `helm s3 push --relative`, as the action does.
-      - name: Publish the chart to the S3 repository (interim)
-        id: s3_chart
-        uses: wireapp/wire-rm-actions/publish-chart-s3@813f008b900b1ad3284502f97cac343d80b1836b # v0.1.0
-        with:
-          chart-file: ${{ steps.manifest.outputs.chart-path }}
-          s3-repository: ${{ steps.manifest.outputs.kind == 'ga' && 'charts' || 'charts-develop' }}
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
-
-      - name: Summarise the S3 chart push
-        env:
-          S3_REPO: ${{ steps.s3_chart.outputs.repository }}
-          S3_STATUS: ${{ steps.s3_chart.outputs.status }}
-        run: |
-          echo "> :package: Chart package in \`${S3_REPO}\`: ${S3_STATUS}." >> "$GITHUB_STEP_SUMMARY"
