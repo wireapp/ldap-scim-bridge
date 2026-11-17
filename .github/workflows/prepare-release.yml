@@ -236,13 +236,14 @@ jobs:
 
       # Dependencies of the release, recorded in the manifest; publish-release uploads it to
       # Dependency-Track for a GA. tom-bombadil is the revision locked in flake.lock.
+      # create-sbom reads result/all-toplevel.jsonl: keep the ./result link.
       - name: Build the SBOM
         id: sbom
         env:
           RELEASE_DIR: ${{ steps.chart.outputs.release_dir }}
         run: |
           set -euo pipefail
-          nix build .#bomDependencies --no-link
+          nix build .#bomDependencies --out-link result
           nix run --inputs-from . tom-bombadil#create-sbom -- --root-package-name ldap-scim-bridge
           mv sbom.json "${RELEASE_DIR}/sbom.json"
           sha256=$(sha256sum "${RELEASE_DIR}/sbom.json" | awk '{print $1}')
