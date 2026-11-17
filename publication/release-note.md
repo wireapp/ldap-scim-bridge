@@ -1,3 +1,5 @@
+# ldap-scim-bridge 6.0.0
+
 ## Overview
 
 The bridge itself is unchanged since 0.10.4: same code, same configuration
@@ -63,3 +65,9 @@ Dev builds of every merge are published under computed versions such as
 `oci://quay.io/wire/charts/dev/ldap-scim-bridge`, kept 90 days). Releases are
 prepared and published from GitHub Actions, approved by the release managers,
 and declared to the Wire release manager.
+
+Pushing a `v*` tag no longer builds anything; that is what "drop tag-only image
+and SBOM publishing" in the change list of this release refers to. The release
+workflows build the image, the chart and the SBOM once, then publish them by
+digest. Every release carries its SBOM as `sbom.json`, and the SBOM of a GA
+also goes to Dependency-Track.
