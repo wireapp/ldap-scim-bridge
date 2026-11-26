@@ -187,6 +187,10 @@ jobs:
           robot: wire+gha_ldap-scim-bridge
 
       - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
+        with:
+          extra_nix_config: |
+            extra-substituters = https://wire-server.cachix.org
+            extra-trusted-public-keys = wire-server.cachix.org-1:fVWmRcvdsqzKek3X5Ad8nYNsBSjKZ9Um2NMLfMLS77Y=
 
       # flake.nix sets the ADR-0020 OCI labels with the release version. Never an
       # expiration: the label is part of the digest that publication promotes.

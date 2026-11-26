@@ -22,7 +22,7 @@ extra-source-files:
   examples/wire-server/run.sh
   examples/wire-server/runlog
 
-tested-with:        GHC ==9.6.6
+tested-with:        GHC ==9.10.3
 
 source-repository head
   type:     git
@@ -30,15 +30,15 @@ source-repository head
 
 common common-options
   build-depends:
-    , aeson                 >=2.1.2   && <2.2
+    , aeson                 >=2.1.2   && <2.3
     , aeson-pretty          >=0.8.10  && <0.9
     , base                  >=4.17    && <4.21
-    , bytestring            >=0.11.5  && <0.12
-    , containers            >=0.6.7   && <0.7
+    , bytestring            >=0.11.5  && <0.13
+    , containers            >=0.6.7   && <0.8
     , email-validate        >=2.3.2   && <2.4
     , hscim                 >=0.4.0.6 && <0.5
     , http-client           >=0.7.16  && <0.8
-    , http-client-tls       >=0.3.6   && <0.4
+    , http-client-tls       >=0.3.6   && <0.5
     , http-types            >=0.12.4  && <0.13
     , ldap-client           >=0.4.2   && <0.5
     , network               >=3.1.4.0 && <3.3
@@ -47,7 +47,7 @@ common common-options
     , servant-client        >=0.19    && <0.21
     , servant-client-core   >=0.19    && <0.21
     , string-conversions    >=0.4.0   && <0.5
-    , text                  >=2.0.2   && <2.1
+    , text                  >=2.0.2   && <2.2
     , tinylog               >=0.15.0  && <0.16
     , unordered-containers  >=0.2.20  && <0.3
     , yaml                  >=0.11.11 && <0.12
