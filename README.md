@@ -225,10 +225,8 @@ Another way to get into this environment is to call:
 nix develop
 ```
 
-To develop with a specific GHC version call e.g.:
-```sh
-nix develop .\#ghc96
-```
+hscim and its dependencies come from wire-server's Haskell package set, which
+also determines the GHC version; see `flake.nix`.
 
 The Docker image can be build and loaded with:
 
@@ -261,12 +259,6 @@ To update the Nix dependencies:
 ```sh
 nix flake update
 ```
-
-### CI
-
-Tag your PR with the label `ghc-matrix` to build this package with many
-different GHC versions. Most are unfortunately - shame on us! - expected to
-fail.
 
 ### Commit messages
 

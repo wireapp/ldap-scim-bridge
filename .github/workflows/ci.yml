@@ -39,7 +39,7 @@ jobs:
         run: nix fmt -- --ci
 
   build:
-    name: Haskell build (GHC 9.6 - default env)
+    name: Haskell build
     runs-on: ubuntu-26.04
     permissions:
       contents: read
@@ -154,35 +154,3 @@ jobs:
             exit 1
           fi
           echo "kubernetes ${declared}: chart and compatibility.yaml agree"
-
-  build-ghc-matrix:
-    name: Haskell build with several GHC versions (some are expected to fail)
-    if: contains(github.event.pull_request.labels.*.name, 'ghc-matrix')
-    runs-on: ubuntu-26.04
-    permissions:
-      contents: read
-    strategy:
-      fail-fast: false
-      matrix:
-        ghc: ["ghc92", "ghc94", "ghc96", "ghc98", "ghc910"]
-
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
-
-      - name: Build
-        run: nix develop ".#$GHC_VERSION" --command bash -c "cabal build all"
-        env:
-          GHC_VERSION: ${{ matrix.ghc }}
-
-      - name: Run tests
-        run: nix develop ".#$GHC_VERSION" --command bash -c "cabal test all"
-        env:
-          GHC_VERSION: ${{ matrix.ghc }}
-
-      - name: Check cabal file
-        run: nix develop ".#$GHC_VERSION" --command bash -c "cabal check"
-        env:
-          GHC_VERSION: ${{ matrix.ghc }}

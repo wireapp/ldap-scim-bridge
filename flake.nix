@@ -7,6 +7,23 @@
     nixpkgs-lint.url = "nixpkgs/nixos-26.05";
     flake-utils.url = "github:numtide/flake-utils";
     tom-bombadil.url = "github:wireapp/tom-bombadil";
+    # hscim and the wire-server libraries it needs (schema-profunctor, imports,
+    # wai-utilities, types-common, ...) come from wire-server's Haskell package
+    # set.  So do the third-party packages wire-server replaces with git forks
+    # or fixed Hackage versions (nix/haskell-pins.nix there), e.g. tinylog, cql,
+    # warp.  Pinned to master (2026-10-26).
+    # Not a flake input: wire-server's flake requires its submodules, one of
+    # which is private.  flake-compat evaluates it with wire-server's own
+    # flake.lock, but without submodules.
+    wire-server = {
+      url = "github:wireapp/wire-server/5239cf4eef81bf02ca6ed18df39f8e86a93d2116";
+      flake = false;
+    };
+    flake-compat = {
+      # needed for wire-server (see above)
+      url = "github:NixOS/flake-compat";
+      flake = false;
+    };
   };
 
   outputs =
@@ -15,6 +32,8 @@
     , nixpkgs-lint
     , flake-utils
     , tom-bombadil
+    , wire-server
+    , flake-compat
     }:
     flake-utils.lib.eachDefaultSystem (
       system:
@@ -22,33 +41,13 @@
         pkgs = import nixpkgs { inherit system; };
         lintPkgs = import nixpkgs-lint { inherit system; };
 
-        haskellPackagesOverlay = {
-          overrides = self: super: {
-            hscim = super.callHackageDirect
-              {
-                pkg = "hscim";
-                ver = "0.4.0.6";
-                sha256 = "sha256-qGTyfu9nGQDLdUnqCZRfcCRTAgc2fFu6/IomKyh0fbU=";
-              }
-              { };
-            tinylog = pkgs.haskell.lib.markUnbroken (
-              pkgs.haskell.lib.overrideSrc super.tinylog {
-                src = pkgs.fetchFromGitHub {
-                  owner = "wireapp";
-                  repo = "tinylog";
-                  rev = "9609104263e8cd2a631417c1c3ef23e090de0d09";
-                  sha256 = "sha256-htEIJY+LmIMACVZrflU60+X42/g14NxUyFM7VJs4E6w=";
-                };
-                version = "0.15";
-              }
-            );
-            ldap-scim-bridge = super.developPackage {
-              root = ./.;
-            };
+        wireServerPackages = (import flake-compat { src = wire-server; }).outputs.packages.${system};
+        wireServer = wireServerPackages.wireServer;
+        haskellPackages = wireServer.haskellPackages.extend (self: super: {
+          ldap-scim-bridge = super.developPackage {
+            root = ./.;
           };
-        };
-
-        haskellPackages = pkgs.haskellPackages.override haskellPackagesOverlay;
+        });
 
         formatters = [
           (pkgs.haskell.lib.justStaticExecutables pkgs.haskellPackages.ormolu)
@@ -94,32 +93,30 @@
           fileset = ./.github;
         };
 
-        # ldap-scim-bridge currently can only be built with GHC 9.6. However,
-        # providing environments with other GHC versions is a first step to fix
-        # the issues...
-        ghcVersions = [ "ghc92" "ghc94" "ghc96" "ghc98" "ghc910" ];
+        # The GHC version is the one of wire-server's package set.
+        devShell = haskellPackages.shellFor {
+          packages = p: [ p.ldap-scim-bridge ];
+          withHoogle = true;
+          buildInputs = [
+            pkgs.ghcid
+            pkgs.statix
+            statix-command
+            wireServerPackages.pkgs.haskell-language-server
+          ] ++ formatters;
+        };
 
-        haskellPackagesFor = ghc_version: pkgs.haskell.packages.${ghc_version}.override haskellPackagesOverlay;
-        additionalDevShells = builtins.listToAttrs (map
-          (ghc_version: {
-            name = ghc_version;
-            value = (haskellPackagesFor ghc_version).shellFor {
-              packages = p: [ p.ldap-scim-bridge ];
-              withHoogle = true;
-              buildInputs = [
-                pkgs.ghcid
-                pkgs.statix
-                statix-command
-                # We need to be careful to not rebuild HLS, because that would be expensive.
-                (pkgs.haskell-language-server.override {
-                  supportedGhcVersions = [ (pkgs.lib.removePrefix "ghc" ghc_version) ];
-                })
-              ] ++ formatters;
-            };
-          })
-          ghcVersions);
-
-        bomDependencies = tom-bombadil.lib.${system}.bomDependenciesDrv pkgs [ haskellPackages.ldap-scim-bridge ] haskellPackages;
+        # tom-bombadil evaluates every package of the set it gets, and some of
+        # wire-server's don't evaluate (missing submodules), so pass it only the
+        # Haskell closure of ldap-scim-bridge.
+        bomHaskellPackages = builtins.listToAttrs (map
+          ({ key, drv }: { name = key; value = drv; })
+          (builtins.genericClosure {
+            startSet = [{ key = "ldap-scim-bridge"; drv = haskellPackages.ldap-scim-bridge; }];
+            operator = { drv, ... }: map
+              (d: { key = d.pname; drv = d; })
+              (wireServerPackages.pkgs.haskell.lib.getHaskellBuildInputs drv);
+          }));
+        bomDependencies = tom-bombadil.lib.${system}.bomDependenciesDrv wireServerPackages.pkgs [ haskellPackages.ldap-scim-bridge ] bomHaskellPackages;
       in
       {
         packages = {
@@ -129,13 +126,13 @@
 
         # Development shell with required dependencies
         devShells = {
-          default = additionalDevShells.ghc96;
+          default = devShell;
           # The tools of the GitHub workflows: the linters, and skopeo and
           # crane for the image pushes (`nix develop .#ci --command ...`).
           ci = lintPkgs.mkShell {
             packages = [ lint-workflows lintPkgs.actionlint lintPkgs.shellcheck lintPkgs.zizmor lintPkgs.skopeo lintPkgs.crane ];
           };
-        } // additionalDevShells;
+        };
 
         formatter = treefmt-command;
 
