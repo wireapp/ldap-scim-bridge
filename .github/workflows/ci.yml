@@ -31,6 +31,10 @@ jobs:
         with:
           persist-credentials: false
       - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
+        with:
+          extra_nix_config: |
+            extra-substituters = https://wire-server.cachix.org
+            extra-trusted-public-keys = wire-server.cachix.org-1:fVWmRcvdsqzKek3X5Ad8nYNsBSjKZ9Um2NMLfMLS77Y=
 
       - name: nix flake check
         run: nix flake check
@@ -49,6 +53,10 @@ jobs:
         with:
           persist-credentials: false
       - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
+        with:
+          extra_nix_config: |
+            extra-substituters = https://wire-server.cachix.org
+            extra-trusted-public-keys = wire-server.cachix.org-1:fVWmRcvdsqzKek3X5Ad8nYNsBSjKZ9Um2NMLfMLS77Y=
 
       - name: Build
         run: nix develop .#build --command bash -c "cabal build all"
