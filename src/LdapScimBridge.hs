@@ -38,6 +38,7 @@ import qualified Web.Scim.Schema.Meta as Scim
 import qualified Web.Scim.Schema.Schema as Scim
 import qualified Web.Scim.Schema.User as Scim
 import qualified Web.Scim.Schema.User.Email as Scim
+import qualified Web.Scim.Schema.User.Role as ScimRole
 import Prelude
 
 data LdapConf = LdapConf
@@ -293,7 +294,7 @@ instance Aeson.FromJSON Mapping where
       mapRole ldapFieldName scimFieldName = FieldMapping scimFieldName $
         \case
           [] -> Right id
-          [val] -> Right $ \usr -> usr {Scim.roles = [val]}
+          [val] -> Right $ \usr -> usr {Scim.roles = [ScimRole.Role (Just val) Nothing Nothing Nothing]}
           bad -> Left $ WrongNumberOfAttrValues ldapFieldName scimFieldName "1" (Prelude.length bad)
 
 type LdapResult a = IO (Either LdapError a)
@@ -441,7 +442,7 @@ lookupScimByExternalId clientEnv tok scim = do
   eid <- maybe (error "impossible") pure $ Scim.externalId scim
   let fltr = Just $ filterBy "externalId" eid
   mbold :: [StoredUser] <-
-    ScimClient.getUsers @ScimTag clientEnv tok fltr
+    ScimClient.getUsers @ScimTag clientEnv tok fltr Nothing Nothing
       <&> Scim.resources
   case mbold of
     [old] -> pure $ Just old

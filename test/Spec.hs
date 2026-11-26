@@ -15,6 +15,7 @@ import Web.Scim.Schema.Meta as Scim
 import Web.Scim.Schema.Schema as Scim
 import Web.Scim.Schema.User as Scim
 import Web.Scim.Schema.User.Email as Scim
+import Web.Scim.Schema.User.Role (Role (Role))
 
 main :: IO ()
 main = hspec $ do
@@ -117,7 +118,7 @@ mkExpectedScimUser displayName userName externalId email mRole =
       photos = [],
       addresses = [],
       entitlements = [],
-      roles = maybeToList mRole,
+      roles = (\r -> Role (Just r) Nothing Nothing Nothing) <$> maybeToList mRole,
       x509Certificates = [],
       extra = NoUserExtra
     }
