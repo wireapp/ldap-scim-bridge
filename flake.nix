@@ -105,6 +105,15 @@
           ] ++ formatters;
         };
 
+        # `cabal build` and `cabal test` in CI: no HLS, hoogle nor ghcid, which
+        # are not in cache.nixos.org for wire-server's package set and take long
+        # to build.  cabal-install is pinned here instead of coming from the
+        # runner image.
+        buildShell = haskellPackages.shellFor {
+          packages = p: [ p.ldap-scim-bridge ];
+          buildInputs = [ pkgs.cabal-install ];
+        };
+
         # tom-bombadil evaluates every package of the set it gets, and some of
         # wire-server's don't evaluate (missing submodules), so pass it only the
         # Haskell closure of ldap-scim-bridge.
@@ -127,6 +136,7 @@
         # Development shell with required dependencies
         devShells = {
           default = devShell;
+          build = buildShell;
           # The tools of the GitHub workflows: the linters, and skopeo and
           # crane for the image pushes (`nix develop .#ci --command ...`).
           ci = lintPkgs.mkShell {
